@@ -56,12 +56,22 @@ def parse_dkey(value: str) -> date:
     return datetime.strptime(value, "%Y%m%d").date()
 
 
+WEEKDAYS_KK = ["Дс", "Сс", "Ср", "Бс", "Жм", "Сб", "Жс"]
+WEEKDAYS_KK_FULL = ["Дүйсенбі", "Сейсенбі", "Сәрсенбі", "Бейсенбі", "Жұма", "Сенбі", "Жексенбі"]
+MONTHS_KK = ["қаң", "ақп", "нау", "сәу", "мам", "мау", "шіл", "там", "қыр", "қаз", "қар", "жел"]
+
+
+def short_date(d: date) -> str:
+    return f"{d.day} {MONTHS_KK[d.month - 1]}"
+
+
 def fmt_date(d: date) -> str:
-    return d.strftime("%a %d %b")
+    return f"{WEEKDAYS_KK[d.weekday()]}, {short_date(d)}"
 
 
 def fmt_dt(dt: datetime) -> str:
-    return local(dt).strftime("%a %d %b %H:%M")
+    loc = local(dt)
+    return f"{fmt_date(loc.date())} {loc.strftime('%H:%M')}"
 
 
 def fmt_time(dt: datetime) -> str:
@@ -71,9 +81,9 @@ def fmt_time(dt: datetime) -> str:
 def day_label(d: date, today: date) -> str:
     delta = (d - today).days
     if delta == 0:
-        return f"Today ({d.strftime('%d %b')})"
+        return f"Бүгін ({short_date(d)})"
     if delta == 1:
-        return f"Tomorrow ({d.strftime('%d %b')})"
+        return f"Ертең ({short_date(d)})"
     return fmt_date(d)
 
 

@@ -94,8 +94,8 @@ def h(conn, monkeypatch):
     harness = Harness(conn)
     yield harness
     # every tap must reach a real handler, never the "button expired" fallback
-    assert not [a for a in harness.session.alerts() if "expired. Send /menu" in a]
-    assert not [t for t in harness.session.texts() if "Please answer the question above" in t]
+    assert not [a for a in harness.session.alerts() if "мерзімі өтті" in a]
+    assert not [t for t in harness.session.texts() if "Жоғарыдағы сұраққа жауап беріңіз" in t]
 
 
 @pytest.fixture(autouse=True)
@@ -109,12 +109,12 @@ def no_handler_errors(caplog):
 async def test_onboarding_new_student(h, monkeypatch):
     uid = 999
     await h.say(uid, "/start")
-    assert "What's your name" in h.last(uid)
+    assert "Атыңыз кім" in h.last(uid)
     await h.say(uid, "Aida")
     await h.tap(uid, "on:role:mentor")      # not whitelisted -> student
     row = h.conn.execute("SELECT * FROM users WHERE tg_id = ?", (uid,)).fetchone()
     assert row["name"] == "Aida" and row["role"] == "student"
-    assert any("New student registered" in t for t in h.session.texts(MENTORS[0]))
+    assert any("Жаңа студент тіркелді" in t for t in h.session.texts(MENTORS[0]))
 
 
 async def test_whitelisted_mentor_onboarding(h, monkeypatch):
@@ -127,35 +127,35 @@ async def test_whitelisted_mentor_onboarding(h, monkeypatch):
 
 async def test_unregistered_cannot_tap_buttons(h):
     await h.tap(5555, "w:days")
-    assert "Please send /start first." in h.session.alerts()
+    assert "Алдымен /start жіберіңіз." in h.session.alerts()
 
 
 async def test_student_washer_flow_all_buttons(h):
     s = STUDENTS[0]
     tomorrow = dkey(local_today(utcnow()) + timedelta(days=1))
     await h.say(s, "/start")
-    assert "Book Washer" not in h.last(s)  # menu text; buttons checked below
+    assert "Не істегіңіз келеді" in h.last(s)
     await h.tap(s, "w:days")
     await h.tap(s, f"w:day:{tomorrow}")
     await h.tap(s, f"w:slot:{tomorrow}:0930")
     await h.tap(s, f"w:cyc:{tomorrow}:0930:normal")
-    assert "Booked" in h.last(s)
+    assert "Брондалды" in h.last(s)
     await h.tap(STUDENTS[1], f"w:cyc:{tomorrow}:0930:quick")
-    assert "Just taken" in h.last(STUDENTS[1])
+    assert "Жаңа ғана біреу алып қойды" in h.last(STUDENTS[1])
     await h.tap(STUDENTS[1], f"w:wl:{tomorrow}:0930")
-    assert "#1 on the waitlist" in h.last(STUDENTS[1])
+    assert "№1 орындасыз" in h.last(STUDENTS[1])
     await h.tap(s, "w:my")
     bid = h.conn.execute("SELECT id FROM bookings WHERE user_id = ?", (s,)).fetchone()[0]
     await h.tap(s, f"w:st:{bid}")          # too early -> alert
     await h.tap(s, f"w:cx:{bid}")
     await h.tap(s, f"w:cxy:{bid}")
-    assert any("freed up" in t for t in h.session.texts(STUDENTS[1]))
+    assert any("слоты босады" in t for t in h.session.texts(STUDENTS[1]))
     wl = h.conn.execute("SELECT id FROM waitlist WHERE user_id = ?", (STUDENTS[1],)).fetchone()[0]
     await h.tap(STUDENTS[1], f"w:cl:{wl}:normal")
-    assert "Claimed" in h.last(STUDENTS[1])
+    assert "Слот сіздікі" in h.last(STUDENTS[1])
     for data in ["w:rec", "w:recd:6", "w:recd:6", "w:rect:6:1000", "w:recc:6:1000:quick"]:
         await h.tap(s, data)
-    assert any("recurring" in t for t in h.session.texts(MENTORS[0]))
+    assert any("апта сайынғы" in t for t in h.session.texts(MENTORS[0]))
     await h.say(s, "/book")
     await h.say(s, "/mybookings")
 
@@ -167,27 +167,27 @@ async def test_reports_flows(h):
     await h.tap(s, "r:ma:1")
     await h.say(s, "Fridge is leaking", photo=True)
     await h.tap(s, "r:mname:1")
-    assert any("Kitchen" in t for t in h.session.texts(MENTORS[0]))
+    assert any("Ас үй" in t for t in h.session.texts(MENTORS[0]))
     # duplicate within 2h
     await h.tap(STUDENTS[3], "r:ma:1")
     await h.say(STUDENTS[3], "fridge again")
-    assert "reported" in h.last(STUDENTS[3])
+    assert "бұрын хабарланған" in h.last(STUDENTS[3])
     await h.tap(STUDENTS[3], "r:mdup:0")
     rid = h.conn.execute("SELECT id FROM reports").fetchone()[0]
     await h.tap(MENTORS[0], f"r:ms:{rid}:fixed")
-    assert any("fixed" in t for t in h.session.texts(s))
+    assert any("жөнделді" in t for t in h.session.texts(s))
     # anonymous with replies
     await h.tap(s, "r:a")
     await h.tap(s, "r:ac:0")
     await h.say(s, "Music at 3am every night")
     await h.tap(s, "r:ao:1")
-    token = next(t for t in h.session.texts(s) if "Your secret code: " in t).split("secret code: ")[1].split()[0]
+    token = next(t for t in h.session.texts(s) if "Құпия кодыңыз: " in t).split("Құпия кодыңыз: ")[1].split()[0]
     aid = h.conn.execute("SELECT id FROM anon_reports").fetchone()[0]
     await h.tap(MENTORS[1], f"r:ar:{aid}")
-    await h.say(MENTORS[1], "Thanks, we will handle it")
+    await h.say(MENTORS[1], "Рақмет, шешеміз")
     await h.tap(s, "r:ak")
     await h.say(s, token)
-    assert "we will handle it" in h.last(s)
+    assert "Рақмет, шешеміз" in h.last(s)
     await h.tap(s, "r:akr")
     await h.say(s, "Thank you")
     await h.tap(MENTORS[1], f"r:acl:{aid}")
@@ -217,7 +217,7 @@ async def test_duty_flows(h):
 async def test_announcement_flow(h):
     m = MENTORS[0]
     await h.tap(STUDENTS[0], "n:new")
-    assert "Mentors only." in h.session.alerts()
+    assert "Тек тәлімгерлерге арналған." in h.session.alerts()
     await h.say(m, "/announce")
     await h.say(m, "Water off")
     await h.say(m, "No water 10-12 tomorrow")
@@ -246,7 +246,7 @@ async def test_announcement_flow(h):
     await h.tap(m, "n:w:custom")
     await h.say(m, "25.12 18:00")
     await h.tap(m, "n:go")
-    assert "Scheduled" in h.last(m)
+    assert "уақытына жоспарланды" in h.last(m)
 
 
 async def test_guest_flow(h):
@@ -260,8 +260,8 @@ async def test_guest_flow(h):
     await h.tap(s, "g:dur:1n")
     gid = h.conn.execute("SELECT id FROM guests").fetchone()[0]
     await h.tap(MENTORS[0], f"g:rj:{gid}")
-    await h.say(MENTORS[0], "No space tonight")
-    assert any("No space tonight" in t for t in h.session.texts(s))
+    await h.say(MENTORS[0], "Бүгін орын жоқ")
+    assert any("Бүгін орын жоқ" in t for t in h.session.texts(s))
     await h.tap(MENTORS[0], "g:today")
     await h.tap(MENTORS[0], "a:g")
     await h.tap(s, "g:new")
@@ -280,7 +280,7 @@ async def test_event_flow(h):
     await h.tap(s, "e:new")
     await h.say(s, "Movie night")
     await h.tap(s, "e:skip")
-    await h.tap(s, "e:loc:Common room")
+    await h.tap(s, "e:loc:Ортақ бөлме")
     await h.tap(s, f"e:d:{day}")
     await h.say(s, "19:30")
     await h.tap(s, "e:rec:1")
@@ -303,7 +303,7 @@ async def test_admin_panel_every_button(h):
     s = STUDENTS[0]
     day = dkey(local_today(utcnow()) + timedelta(days=1))
     await h.say(s, "/admin")
-    assert "Mentors only." in h.last(s)
+    assert "Тек тәлімгерлерге арналған." in h.last(s)
     for data in ["a:menu", "a:w", f"a:wd:{day}", f"a:ws:{day}:0800", f"a:wfb:{day}:0800", f"a:wfu:{day}:0800:{s}"]:
         await h.tap(m, data)
     bid = h.conn.execute("SELECT id FROM bookings").fetchone()[0]
@@ -334,9 +334,9 @@ async def test_muted_user_is_blocked(h):
     from bot.services import users
     users.set_muted(h.conn, MENTORS[0], STUDENTS[9], True)
     await h.say(STUDENTS[9], "/book")
-    assert "muted" in h.last(STUDENTS[9])
+    assert "шектеу қойылған" in h.last(STUDENTS[9])
 
 
 async def test_fallback_text(h):
     await h.say(STUDENTS[0], "hello?")
-    assert "use the buttons" in h.last(STUDENTS[0])
+    assert "батырмаларды пайдаланыңыз" in h.last(STUDENTS[0])

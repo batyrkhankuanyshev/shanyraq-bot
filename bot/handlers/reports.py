@@ -33,14 +33,14 @@ async def menu(event: Message | CallbackQuery, user, state: FSMContext):
         return await not_registered(event)
     await state.clear()
     rows = [
-        [("🛠 Maintenance", "r:m")],
-        [("🕶 Anonymous report", "r:a")],
-        [("💬 Check anonymous replies", "r:ak")],
-        [("⬅️ Menu", "menu")],
+        [("🛠 Ақаулық", "r:m")],
+        [("🕶 Анонимді шағым", "r:a")],
+        [("💬 Анонимді жауаптарды тексеру", "r:ak")],
+        [("⬅️ Мәзір", "menu")],
     ]
     if users.is_mentor(user):
-        rows.insert(3, [("📂 Open reports (mentors)", "a:r")])
-    await show(event, "🚨 What would you like to report?", kb(*rows))
+        rows.insert(3, [("📂 Ашық өтініштер (тәлімгерлер)", "a:r")])
+    await show(event, "🚨 Не туралы хабарлағыңыз келеді?", kb(*rows))
 
 
 # ---------------------------------------------------------------- maintenance
@@ -48,15 +48,15 @@ async def menu(event: Message | CallbackQuery, user, state: FSMContext):
 @router.callback_query(F.data == "r:m")
 async def m_area(cb: CallbackQuery):
     rows = grid([(a, f"r:ma:{i}") for i, a in enumerate(AREAS)], 2)
-    rows.append([("⬅️ Back", "r:menu")])
-    await show(cb, "🛠 What needs fixing?", kb(*rows))
+    rows.append([("⬅️ Артқа", "r:menu")])
+    await show(cb, "🛠 Не жөндеу керек?", kb(*rows))
 
 
 @router.callback_query(F.data.startswith("r:ma:"))
 async def m_ask_desc(cb: CallbackQuery, state: FSMContext):
     await state.set_state(ReportFlow.m_desc)
     await state.update_data(area=AREAS[int(cb.data.split(":")[2])])
-    await show(cb, "Describe the problem in a message. You can attach a photo (add the description as its caption).\n/cancel to stop.")
+    await show(cb, "Мәселені хабарламамен сипаттаңыз. Фото да жіберуге болады (сипаттаманы фотоның астына жазыңыз).\nТоқтату үшін /cancel.")
 
 
 def _text_and_photo(message: Message) -> tuple[str, str | None]:
@@ -69,17 +69,17 @@ def _text_and_photo(message: Message) -> tuple[str, str | None]:
 async def m_got_desc(message: Message, state: FSMContext, conn):
     text, photo = _text_and_photo(message)
     if not text:
-        await message.answer("Please add a short description (as text or as the photo's caption).")
+        await message.answer("Қысқаша сипаттама қосыңыз (мәтін ретінде немесе фотоның астына).")
         return
     await state.update_data(desc=text[:1500], photo=photo)
     area = (await state.get_data())["area"]
     dup = reports.recent_duplicate(conn, area, utcnow())
     if dup:
         mins = int((utcnow() - from_db(dup["created_at"])).total_seconds() // 60)
-        ago = f"{mins} min" if mins < 60 else f"{mins // 60}h {mins % 60}m"
+        ago = f"{mins} минут" if mins < 60 else f"{mins // 60} сағ {mins % 60} мин"
         await message.answer(
-            f"ℹ️ A {area} problem was reported {ago} ago:\n“{dup['description'][:200]}”\nIs yours a different/still an issue?",
-            reply_markup=kb([("Yes, report it", "r:mdup:1"), ("No, it's the same", "r:mdup:0")]),
+            f"ℹ️ «{area}» бойынша мәселе {ago} бұрын хабарланған:\n“{dup['description'][:200]}”\nСіздікі басқа мәселе ме, әлде әлі шешілмеді ме?",
+            reply_markup=kb([("Иә, хабарлау", "r:mdup:1"), ("Жоқ, дәл сол мәселе", "r:mdup:0")]),
         )
         return
     await _ask_name(message)
@@ -87,8 +87,8 @@ async def m_got_desc(message: Message, state: FSMContext, conn):
 
 async def _ask_name(message: Message):
     await message.answer(
-        "Should mentors see your name? (If yes, I'll DM you when it's fixed.)",
-        reply_markup=kb([("Yes, include my name", "r:mname:1"), ("Stay anonymous", "r:mname:0")]),
+        "Тәлімгерлер атыңызды көрсін бе? (Иә десеңіз, жөнделгенде хабарлаймын.)",
+        reply_markup=kb([("Иә, атым көрсетілсін", "r:mname:1"), ("Анонимді қалу", "r:mname:0")]),
     )
 
 
@@ -96,7 +96,7 @@ async def _ask_name(message: Message):
 async def m_dup(cb: CallbackQuery, state: FSMContext):
     if cb.data.endswith(":0"):
         await state.clear()
-        await show(cb, "👍 Thanks — mentors already know about it.", kb([("⬅️ Menu", "menu")]))
+        await show(cb, "👍 Рақмет — тәлімгерлер бұл туралы біледі.", kb([("⬅️ Мәзір", "menu")]))
         return
     await cb.answer()
     await _ask_name(cb.message)
@@ -109,7 +109,7 @@ async def m_submit(cb: CallbackQuery, state: FSMContext, conn, bot, user):
     rid, notices = reports.create_maintenance(
         conn, user["tg_id"], data["area"], data["desc"], data.get("photo"), utcnow(), anonymous=cb.data.endswith(":0"),
     )
-    await show(cb, f"✅ Report #{rid} sent. Mentors have been notified.", kb([("⬅️ Menu", "menu")]))
+    await show(cb, f"✅ №{rid} өтініш жіберілді. Тәлімгерлерге хабарланды.", kb([("⬅️ Мәзір", "menu")]))
     await deliver(bot, conn, notices)
 
 
@@ -120,7 +120,7 @@ async def m_status(cb: CallbackQuery, user, conn, bot):
     _, _, rid, status = cb.data.split(":")
     notices = reports.set_status(conn, user["tg_id"], int(rid), status, utcnow())
     r = conn.execute("SELECT * FROM reports WHERE id = ?", (int(rid),)).fetchone()
-    await cb.answer(f"Marked {reports.STATUSES[r['status']]}")
+    await cb.answer(f"Белгіленді: {reports.STATUSES[r['status']]}")
     try:
         markup = None if r["status"] == "fixed" else reports.status_buttons(r["id"])
         if cb.message.photo:
@@ -137,30 +137,30 @@ async def m_status(cb: CallbackQuery, user, conn, bot):
 @router.callback_query(F.data == "r:a")
 async def a_category(cb: CallbackQuery):
     rows = grid([(c, f"r:ac:{i}") for i, c in enumerate(ANON_CATEGORIES)], 2)
-    rows.append([("⬅️ Back", "r:menu")])
-    await show(cb, "🕶 Anonymous report\nYour identity is never stored — not in the database, not in logs. "
-                   "Mentors only see the category and what you write.\n\nWhat is it about?", kb(*rows))
+    rows.append([("⬅️ Артқа", "r:menu")])
+    await show(cb, "🕶 Анонимді шағым\nСіздің кім екеніңіз ешқайда сақталмайды — дерекқорда да, журналдарда да. "
+                   "Тәлімгерлер тек санатты және жазғаныңызды көреді.\n\nНе туралы?", kb(*rows))
 
 
 @router.callback_query(F.data.startswith("r:ac:"))
 async def a_ask_desc(cb: CallbackQuery, state: FSMContext):
     await state.set_state(ReportFlow.a_desc)
     await state.update_data(category=ANON_CATEGORIES[int(cb.data.split(":")[2])])
-    await show(cb, "Describe what's happening. A photo is optional (put the text in its caption).\n"
-                   "Tip: avoid details that would reveal who you are. /cancel to stop.")
+    await show(cb, "Не болып жатқанын сипаттаңыз. Фото міндетті емес (мәтінді фотоның астына жазыңыз).\n"
+                   "Кеңес: өзіңізді танытатын мәліметтерді жазбаңыз. Тоқтату үшін /cancel.")
 
 
 @router.message(ReportFlow.a_desc, F.text | F.photo)
 async def a_got_desc(message: Message, state: FSMContext):
     text, photo = _text_and_photo(message)
     if not text:
-        await message.answer("Please add a short description.")
+        await message.answer("Қысқаша сипаттама қосыңыз.")
         return
     await state.update_data(desc=text[:1500], photo=photo)
     await message.answer(
-        "Would you like to be able to receive anonymous replies from mentors? "
-        "You'll get a secret code to check replies — nobody (not even the bot) links it to you.",
-        reply_markup=kb([("Yes, give me a code", "r:ao:1"), ("No, just send it", "r:ao:0")]),
+        "Тәлімгерлерден анонимді жауап алғыңыз келе ме? "
+        "Жауаптарды тексеру үшін құпия код аласыз — оны сізбен ешкім (тіпті бот та) байланыстыра алмайды.",
+        reply_markup=kb([("Иә, код беріңіз", "r:ao:1"), ("Жоқ, жай жіберу", "r:ao:0")]),
     )
 
 
@@ -173,20 +173,20 @@ async def a_submit(cb: CallbackQuery, state: FSMContext, conn, bot):
             conn, cb.from_user.id, data["category"], data["desc"], data.get("photo"), cb.data.endswith(":1"), utcnow(),
         )
     except PermissionError as e:
-        await show(cb, f"😕 {e}", kb([("⬅️ Menu", "menu")]))
+        await show(cb, f"😕 {e}", kb([("⬅️ Мәзір", "menu")]))
         return
-    text = "✅ Sent anonymously to the mentors. Thank you for speaking up."
+    text = "✅ Тәлімгерлерге анонимді түрде жіберілді. Үндемей қалмағаныңызға рақмет."
     if token:
-        text += (f"\n\nYour secret code: {token}\nSave it! Use Report → Check anonymous replies and enter it "
-                 "to read mentor replies. If you lose it, replies can't be recovered.")
-    await show(cb, text, kb([("⬅️ Menu", "menu")]))
+        text += (f"\n\nҚұпия кодыңыз: {token}\nОны сақтап қойыңыз! Тәлімгер жауаптарын оқу үшін Хабарлау → "
+                 "Анонимді жауаптарды тексеру бөліміне кіріп, кодты енгізіңіз. Код жоғалса, жауаптарды қалпына келтіру мүмкін емес.")
+    await show(cb, text, kb([("⬅️ Мәзір", "menu")]))
     await deliver(bot, conn, notices)
 
 
 @router.callback_query(F.data == "r:ak")
 async def a_ask_token(cb: CallbackQuery, state: FSMContext):
     await state.set_state(ReportFlow.a_token)
-    await show(cb, "Send your secret code (looks like A-1F2E3D4C). /cancel to stop.")
+    await show(cb, "Құпия кодыңызды жіберіңіз (мысалы, A-1F2E3D4C). Тоқтату үшін /cancel.")
 
 
 def _thread_text(conn, r) -> str:
@@ -197,11 +197,11 @@ def _thread_text(conn, r) -> str:
 async def a_check(message: Message, state: FSMContext, conn):
     r = reports.find_by_token(conn, message.text)
     if not r:
-        await message.answer("I couldn't find that code. Check it and try again, or /cancel.")
+        await message.answer("Бұл код табылмады. Тексеріп, қайталап көріңіз немесе /cancel.")
         return
     await state.update_data(token=message.text.strip())
     await state.set_state(None)
-    markup = kb([("💬 Reply", "r:akr")], [("⬅️ Menu", "menu")]) if r["status"] == "open" else kb([("⬅️ Menu", "menu")])
+    markup = kb([("💬 Жауап беру", "r:akr")], [("⬅️ Мәзір", "menu")]) if r["status"] == "open" else kb([("⬅️ Мәзір", "menu")])
     try:
         await message.delete()  # don't leave the code visible in the chat
     except Exception:
@@ -212,10 +212,10 @@ async def a_check(message: Message, state: FSMContext, conn):
 @router.callback_query(F.data == "r:akr")
 async def a_reply_ask(cb: CallbackQuery, state: FSMContext):
     if not (await state.get_data()).get("token"):
-        await cb.answer("Please enter your code again.", show_alert=True)
+        await cb.answer("Кодыңызды қайта енгізіңіз.", show_alert=True)
         return
     await state.set_state(ReportFlow.a_reply)
-    await show(cb, "Write your reply (it stays anonymous). /cancel to stop.")
+    await show(cb, "Жауабыңызды жазыңыз (ол анонимді болып қалады). Тоқтату үшін /cancel.")
 
 
 @router.message(ReportFlow.a_reply, F.text)
@@ -227,7 +227,7 @@ async def a_reply_send(message: Message, state: FSMContext, conn, bot):
     except ValueError as e:
         await message.answer(str(e))
         return
-    await message.answer("✅ Sent anonymously.", reply_markup=kb([("⬅️ Menu", "menu")]))
+    await message.answer("✅ Анонимді түрде жіберілді.", reply_markup=kb([("⬅️ Мәзір", "menu")]))
     await deliver(bot, conn, notices)
 
 
@@ -238,7 +238,7 @@ async def mentor_reply_ask(cb: CallbackQuery, state: FSMContext, user):
     await state.set_state(ReportFlow.mentor_reply)
     await state.update_data(rid=int(cb.data.split(":")[2]))
     await cb.answer()
-    await cb.message.answer("Write your reply to the anonymous reporter. They'll see it when they check with their code. /cancel to stop.")
+    await cb.message.answer("Анонимді шағым иесіне жауабыңызды жазыңыз. Ол кодымен тексергенде көреді. Тоқтату үшін /cancel.")
 
 
 @router.message(ReportFlow.mentor_reply, F.text)
@@ -250,7 +250,7 @@ async def mentor_reply_send(message: Message, state: FSMContext, conn, bot, user
     except ValueError as e:
         await message.answer(str(e))
         return
-    await message.answer("✅ Reply saved. The reporter will see it next time they check.")
+    await message.answer("✅ Жауап сақталды. Шағым иесі келесі жолы тексергенде көреді.")
     await deliver(bot, conn, notices)
 
 
@@ -260,7 +260,7 @@ async def anon_close(cb: CallbackQuery, conn, user):
         return await not_allowed(cb)
     rid = int(cb.data.split(":")[2])
     reports.close_anonymous(conn, user["tg_id"], rid)
-    await cb.answer("Closed.")
+    await cb.answer("Жабылды.")
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:

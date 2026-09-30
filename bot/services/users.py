@@ -7,6 +7,8 @@ from ..notices import Notice, kb
 from ..timeutil import to_db
 from . import audit
 
+ROLE_KK = {"student": "студент", "mentor": "тәлімгер"}
+
 
 def get(conn, tg_id: int):
     return conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
@@ -101,7 +103,7 @@ def deactivate(conn, actor: int, tg_id: int, now: datetime) -> list[Notice]:
             (tg_id, to_db(now)),
         ).fetchall()
         for b in future:
-            notices += washer.cancel_booking(conn, b["id"], now, reason="account deactivated", notify_owner=False)
+            notices += washer.cancel_booking(conn, b["id"], now, reason="аккаунт өшірілді", notify_owner=False)
         audit.log(conn, actor, "deactivate", name_of(conn, tg_id))
     return notices
 
@@ -115,7 +117,7 @@ def activate(conn, actor: int, tg_id: int) -> None:
 def new_user_notice(conn, tg_id: int, name: str, role: str) -> list[Notice]:
     return notify_mentors(
         conn,
-        f"👋 New {role} registered: {name} (id {tg_id}).",
-        kb([("Manage user", f"a:uv:{tg_id}")]),
+        f"👋 Жаңа {ROLE_KK[role]} тіркелді: {name} (id {tg_id}).",
+        kb([("Пайдаланушыны басқару", f"a:uv:{tg_id}")]),
         silent=True,
     )

@@ -10,7 +10,7 @@ from ..timeutil import (
 from . import audit, users
 
 SLOT_TIMES = ["08:00", "09:30", "11:00", "12:30", "14:00", "15:30", "17:00", "18:30", "20:00", "21:30"]
-CYCLES = {"quick": ("Quick", 60), "normal": ("Normal", 90), "heavy": ("Heavy", 120)}
+CYCLES = {"quick": ("Жылдам", 60), "normal": ("Қалыпты", 90), "heavy": ("Ауыр", 120)}
 WEEKLY_LIMIT = 2
 DAYS_AHEAD = 3
 REMIND_BEFORE = timedelta(minutes=15)
@@ -24,7 +24,9 @@ NOSHOW_LIMIT = 3
 BAN_DAYS = 7
 RECURRING_CAP = 4
 LIVE = ("booked", "active")
-WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+BOOKING_STATUS = {"booked": "брондалған", "active": "жүріп жатыр", "done": "аяқталған",
+                  "cancelled": "тоқтатылған", "noshow": "келмеген"}
+WEEKDAYS = ["Дүйсенбі", "Сейсенбі", "Сәрсенбі", "Бейсенбі", "Жұма", "Сенбі", "Жексенбі"]
 
 
 class BookingError(Exception):
@@ -36,14 +38,14 @@ class BookingError(Exception):
 
 def cycle_label(cycle: str) -> str:
     name, minutes = CYCLES[cycle]
-    return f"{name} ({minutes}m)"
+    return f"{name} ({minutes} мин)"
 
 
 def summary(b) -> str:
     start = from_db(b["slot_start"])
     return (
         f"{fmt_date(local(start).date())} {b['slot_time']} · {cycle_label(b['cycle'])} "
-        f"· until {fmt_time(from_db(b['ends_at']))}"
+        f"· {fmt_time(from_db(b['ends_at']))} дейін"
     )
 
 
@@ -161,40 +163,40 @@ def book(
     """Create a booking. The partial UNIQUE index makes double-booking impossible:
     if two people tap the same slot at the same moment, the second INSERT fails."""
     if hhmm not in SLOT_TIMES or cycle not in CYCLES:
-        raise BookingError("invalid", "That slot doesn't exist.")
+        raise BookingError("invalid", "Мұндай слот жоқ.")
     start = at_local(d, hhmm)
     ends = start + timedelta(minutes=CYCLES[cycle][1])
     try:
         with tx(conn):
             user = users.get(conn, uid)
             if not user or not user["active"]:
-                raise BookingError("inactive", "Your account isn't active. Please talk to a mentor.")
+                raise BookingError("inactive", "Аккаунтыңыз белсенді емес. Тәлімгерге хабарласыңыз.")
             if check_rules:
                 if start <= now and not as_active:
-                    raise BookingError("past", "That slot has already started.")
+                    raise BookingError("past", "Бұл слот басталып кетті.")
                 if d > local_today(now) + timedelta(days=DAYS_AHEAD):
-                    raise BookingError("too_far", f"You can book at most {DAYS_AHEAD} days ahead.")
+                    raise BookingError("too_far", f"Ең көбі {DAYS_AHEAD} күн алдын ала брондауға болады.")
                 banned = ban_until(user, now)
                 if banned:
                     raise BookingError(
-                        "banned", f"You can't book until {fmt_dt(banned)} (too many no-shows). "
-                        "A mentor can lift this."
+                        "banned", f"{fmt_dt(banned)} дейін брондай алмайсыз (келмеу саны тым көп). "
+                        "Тәлімгер бұл шектеуді алып тастай алады."
                     )
                 if user["role"] == "student" and weekly_count(conn, uid, d) >= WEEKLY_LIMIT:
                     raise BookingError(
-                        "limit", f"You already have {WEEKLY_LIMIT} bookings that week — that's the fair-use limit."
+                        "limit", f"Сол аптада сізде {WEEKLY_LIMIT} брондау бар — бұл әділ пайдалану шегі."
                     )
                 if cycle == "heavy":
                     nxt = _next_slot_start(start)
                     if nxt and live_booking_at(conn, to_db(nxt)):
                         raise BookingError(
                             "heavy_conflict",
-                            "Heavy takes 120 min and the next slot is already booked. Please pick Quick or Normal.",
+                            "Ауыр режим 120 минут алады, ал келесі слот бос емес. Жылдам немесе Қалыпты режимді таңдаңыз.",
                         )
             if check_block:
                 block = block_for(conn, start)
                 if block:
-                    raise BookingError("blocked", f"The washer is unavailable: {block['reason']}")
+                    raise BookingError("blocked", f"Кір жуғыш машина қолжетімсіз: {block['reason']}")
             remind_sent = int(start - REMIND_BEFORE <= now)
             started = as_active or start <= now
             cur = conn.execute(
@@ -214,7 +216,7 @@ def book(
             )
             return get_booking(conn, cur.lastrowid)
     except sqlite3.IntegrityError:
-        raise BookingError("taken", "Just taken — join the waitlist?") from None
+        raise BookingError("taken", "Жаңа ғана біреу алып қойды — күту тізіміне жазыласыз ба?") from None
 
 
 def heavy_warning(conn, b) -> str:
@@ -223,7 +225,7 @@ def heavy_warning(conn, b) -> str:
     if prev:
         pb = live_booking_at(conn, to_db(prev))
         if pb and pb["cycle"] == "heavy":
-            return f"\n⚠️ The wash before yours is Heavy and may run until {fmt_time(from_db(pb['ends_at']))}."
+            return f"\n⚠️ Сізден бұрынғы жуу — Ауыр режим, {fmt_time(from_db(pb['ends_at']))} дейін созылуы мүмкін."
     return ""
 
 
@@ -261,7 +263,7 @@ def cancel_booking(
         if by_mentor:
             audit.log(conn, by_mentor, "washer_force_free", f"{users.name_of(conn, b['user_id'])} {summary(b)}")
         if notify_owner and reason:
-            notices.append(Notice(b["user_id"], f"❌ Your washer booking was cancelled: {summary(b)}\nReason: {reason}", silent=False))
+            notices.append(Notice(b["user_id"], f"❌ Кір жуғышқа брондауыңыз тоқтатылды: {summary(b)}\nСебебі: {reason}", silent=False))
         if offer:
             notices += offer_next(conn, b["slot_start"], now)
     return notices
@@ -270,9 +272,9 @@ def cancel_booking(
 def user_cancel(conn, booking_id: int, uid: int, now: datetime) -> list[Notice]:
     b = get_booking(conn, booking_id)
     if not b or b["user_id"] != uid:
-        raise BookingError("not_yours", "That booking isn't yours.")
+        raise BookingError("not_yours", "Бұл сіздің брондауыңыз емес.")
     if b["status"] not in LIVE:
-        raise BookingError("gone", "That booking is no longer active.")
+        raise BookingError("gone", "Бұл брондау енді белсенді емес.")
     return cancel_booking(conn, booking_id, now)
 
 
@@ -280,18 +282,18 @@ def start_booking(conn, booking_id: int, uid: int, now: datetime) -> str:
     with tx(conn):
         b = get_booking(conn, booking_id)
         if not b or b["user_id"] != uid:
-            raise BookingError("not_yours", "That booking isn't yours.")
+            raise BookingError("not_yours", "Бұл сіздің брондауыңыз емес.")
         if b["status"] == "active":
-            return "Already marked as started. Enjoy! 🧺"
+            return "Басталды деп белгіленген. 🧺"
         if b["status"] != "booked":
-            raise BookingError("gone", "That booking is no longer active.")
+            raise BookingError("gone", "Бұл брондау енді белсенді емес.")
         if now < from_db(b["slot_start"]) - REMIND_BEFORE:
-            raise BookingError("early", "It's too early — you can tap Started from 15 minutes before your slot.")
+            raise BookingError("early", "Әлі ерте — «Бастадым» батырмасын слоттан 15 минут бұрын басуға болады.")
         conn.execute(
             "UPDATE bookings SET status = 'active', started_at = ?, start_prompt_sent = 1 WHERE id = ?",
             (to_db(now), booking_id),
         )
-    return "✅ Started! I'll check in when your cycle should be done."
+    return "✅ Басталды! Жуу аяқталатын кезде хабарласамын."
 
 
 def _notify_next(conn, slot_start: datetime, text: str) -> list[Notice]:
@@ -314,11 +316,11 @@ def finish_booking(conn, booking_id: int, uid: int, now: datetime) -> tuple[str,
     with tx(conn):
         b = get_booking(conn, booking_id)
         if not b or b["user_id"] != uid:
-            raise BookingError("not_yours", "That booking isn't yours.")
+            raise BookingError("not_yours", "Бұл сіздің брондауыңыз емес.")
         if b["status"] == "done":
-            return "Thanks! 🙌", []
+            return "Рақмет! 🙌", []
         if b["status"] not in LIVE:
-            raise BookingError("gone", "That booking is no longer active.")
+            raise BookingError("gone", "Бұл брондау енді белсенді емес.")
         conn.execute(
             "UPDATE bookings SET status = 'done', finished_at = ?, end_prompt_sent = 1 WHERE id = ?",
             (to_db(now), booking_id),
@@ -326,7 +328,7 @@ def finish_booking(conn, booking_id: int, uid: int, now: datetime) -> tuple[str,
         start = from_db(b["slot_start"])
         nxt = _next_slot_start(start)
         if nxt and now < nxt:
-            msg = f"🧺 The washer is free early (since {fmt_time(now)}) — you can start whenever you're ready."
+            msg = f"🧺 Кір жуғыш ерте босады ({fmt_time(now)} бастап) — дайын болсаңыз, бастай беріңіз."
             notices += _notify_next(conn, start, msg)
             # people waiting on *this* slot can use the leftover time
             for w in conn.execute(
@@ -335,20 +337,20 @@ def finish_booking(conn, booking_id: int, uid: int, now: datetime) -> tuple[str,
             ).fetchall():
                 notices.append(Notice(
                     w["user_id"],
-                    f"🧺 The washer is free now until {fmt_time(nxt)} if you want a quick wash.",
+                    f"🧺 Кір жуғыш қазір {fmt_time(nxt)} дейін бос — жылдам жуып алғыңыз келсе.",
                 ))
                 conn.execute("UPDATE waitlist SET status = 'cleared' WHERE id = ?", (w["id"],))
-    return "🙌 Thanks for freeing the washer!", notices
+    return "🙌 Кір жуғышты босатқаныңызға рақмет!", notices
 
 
 def running_late(conn, booking_id: int, uid: int, now: datetime) -> tuple[str, list[Notice]]:
     with tx(conn):
         b = get_booking(conn, booking_id)
         if not b or b["user_id"] != uid:
-            raise BookingError("not_yours", "That booking isn't yours.")
+            raise BookingError("not_yours", "Бұл сіздің брондауыңыз емес.")
         ends = from_db(b["ends_at"])
         if b["status"] not in ("active", "done") or now >= ends + LATE_GRACE or b["late_until"]:
-            raise BookingError("gone", "Too late to extend this one.")
+            raise BookingError("gone", "Бұл брондауды ұзарту енді мүмкін емес.")
         late_until = ends + LATE_GRACE
         conn.execute(
             "UPDATE bookings SET status = 'active', finished_at = NULL, late_until = ? WHERE id = ?",
@@ -356,9 +358,9 @@ def running_late(conn, booking_id: int, uid: int, now: datetime) -> tuple[str, l
         )
         notices = _notify_next(
             conn, from_db(b["slot_start"]),
-            f"⏳ Heads-up: the wash before yours is running late — the washer should be free by {fmt_time(late_until)}.",
+            f"⏳ Ескерту: сізден бұрынғы жуу кешігіп жатыр — машина {fmt_time(late_until)} дейін босайды.",
         )
-    return f"⏳ OK, you have until {fmt_time(late_until)}. The next person has been told.", notices
+    return f"⏳ Жарайды, {fmt_time(late_until)} дейін уақытыңыз бар. Келесі адамға хабарландым.", notices
 
 
 # ---------------------------------------------------------------- waitlist
@@ -370,20 +372,20 @@ def join_waitlist(conn, uid: int, slot_start: datetime, now: datetime) -> str:
         if b is None:
             return "free"
         if b["user_id"] == uid:
-            raise BookingError("mine", "That's your own booking.")
+            raise BookingError("mine", "Бұл өзіңіздің брондауыңыз.")
         if block_for(conn, slot_start):
-            raise BookingError("blocked", "The washer is unavailable then.")
+            raise BookingError("blocked", "Ол уақытта кір жуғыш қолжетімсіз.")
         try:
             conn.execute(
                 "INSERT INTO waitlist(slot_start, user_id, status, created_at) VALUES (?, ?, 'waiting', ?)",
                 (key, uid, to_db(now)),
             )
         except sqlite3.IntegrityError:
-            raise BookingError("already", "You're already on the waitlist for that slot.") from None
+            raise BookingError("already", "Сіз бұл слоттың күту тізімінде барсыз.") from None
         pos = conn.execute(
             "SELECT COUNT(*) FROM waitlist WHERE slot_start = ? AND status IN ('waiting', 'offered')", (key,)
         ).fetchone()[0]
-    return f"📝 You're #{pos} on the waitlist for {fmt_dt(slot_start)}. I'll DM you if it frees up."
+    return f"📝 Сіз {fmt_dt(slot_start)} слотының күту тізімінде №{pos} орындасыз. Босаса, жеке хабарлама жіберемін."
 
 
 def leave_waitlist(conn, wl_id: int, uid: int, now: datetime) -> list[Notice]:
@@ -419,10 +421,10 @@ def offer_next(conn, slot_start: str, now: datetime) -> list[Notice]:
     deadline = now + CLAIM_WINDOW
     return [Notice(
         w["user_id"],
-        f"🎉 A washer slot freed up: {fmt_dt(start)}.\nClaim it before {fmt_time(deadline)} (5 min) — pick your cycle:",
+        f"🎉 Кір жуғыш слоты босады: {fmt_dt(start)}.\n{fmt_time(deadline)} дейін (5 минут) алып үлгеріңіз — режимді таңдаңыз:",
         kb(
-            [("Quick 60m", f"w:cl:{w['id']}:quick"), ("Normal 90m", f"w:cl:{w['id']}:normal")],
-            [("Heavy 120m", f"w:cl:{w['id']}:heavy"), ("No thanks", f"w:wlx:{w['id']}")],
+            [("Жылдам 60 мин", f"w:cl:{w['id']}:quick"), ("Қалыпты 90 мин", f"w:cl:{w['id']}:normal")],
+            [("Ауыр 120 мин", f"w:cl:{w['id']}:heavy"), ("Керек емес", f"w:wlx:{w['id']}")],
         ),
         silent=False,
     )]
@@ -431,9 +433,9 @@ def offer_next(conn, slot_start: str, now: datetime) -> list[Notice]:
 def claim(conn, wl_id: int, uid: int, cycle: str, now: datetime):
     w = conn.execute("SELECT * FROM waitlist WHERE id = ?", (wl_id,)).fetchone()
     if not w or w["user_id"] != uid:
-        raise BookingError("not_yours", "That offer isn't yours.")
+        raise BookingError("not_yours", "Бұл ұсыныс сізге арналмаған.")
     if w["status"] != "offered" or from_db(w["offered_at"]) + CLAIM_WINDOW <= now:
-        raise BookingError("expired", "Sorry, the 5-minute claim window has passed.")
+        raise BookingError("expired", "Кешіріңіз, 5 минуттық уақыт өтіп кетті.")
     start = from_db(w["slot_start"])
     loc = local(start)
     return book(conn, uid, loc.date(), loc.strftime("%H:%M"), cycle, now, as_active=start <= now)
@@ -442,7 +444,7 @@ def claim(conn, wl_id: int, uid: int, cycle: str, now: datetime):
 # ---------------------------------------------------------------- maintenance & overrides
 
 def start_maintenance(conn, actor: int, reason: str, now: datetime, until: datetime | None = None,
-                      apology: str = "Sorry for the trouble 🙏") -> list[Notice]:
+                      apology: str = "Қолайсыздық үшін кешірім сұраймыз 🙏") -> list[Notice]:
     notices: list[Notice] = []
     with tx(conn):
         conn.execute(
@@ -457,7 +459,7 @@ def start_maintenance(conn, actor: int, reason: str, now: datetime, until: datet
         for b in conn.execute(q, args).fetchall():
             if b["status"] == "active" and from_db(b["slot_start"]) <= now:
                 continue  # a wash already running is left alone
-            notices += cancel_booking(conn, b["id"], now, reason=f"washer unavailable — {reason}. {apology}", offer=False)
+            notices += cancel_booking(conn, b["id"], now, reason=f"кір жуғыш қолжетімсіз — {reason}. {apology}", offer=False)
         wq = "SELECT * FROM waitlist WHERE status IN ('waiting', 'offered') AND slot_start > ?"
         wargs: list = [to_db(now - OFFER_CUTOFF)]
         if until:
@@ -467,7 +469,7 @@ def start_maintenance(conn, actor: int, reason: str, now: datetime, until: datet
             conn.execute("UPDATE waitlist SET status = 'cleared' WHERE id = ?", (w["id"],))
             notices.append(Notice(
                 w["user_id"],
-                f"The waitlist for {fmt_dt(from_db(w['slot_start']))} was cleared: washer unavailable — {reason}.",
+                f"{fmt_dt(from_db(w['slot_start']))} слотының күту тізімі тазартылды: кір жуғыш қолжетімсіз — {reason}.",
             ))
         audit.log(conn, actor, "washer_maintenance_on", reason)
     return notices
@@ -482,7 +484,7 @@ def lift_maintenance(conn, actor: int, now: datetime) -> list[Notice]:
         if cur.rowcount == 0:
             return []
         audit.log(conn, actor, "washer_maintenance_off")
-        return [Notice(u["tg_id"], "✅ The washer is working again — booking is open.") for u in users.everyone(conn)]
+        return [Notice(u["tg_id"], "✅ Кір жуғыш қайта жұмыс істейді — брондау ашық.") for u in users.everyone(conn)]
 
 
 def report_breakdown(conn, uid: int, booking_id: int | None, now: datetime) -> list[Notice]:
@@ -499,27 +501,27 @@ def report_breakdown(conn, uid: int, booking_id: int | None, now: datetime) -> l
                     (to_db(now), booking_id),
                 )
         _, report_notices = reports.create_maintenance(
-            conn, uid, "Washer", "Washer broke down during a cycle (reported from the washer menu).", None, now,
+            conn, uid, "Кір жуғыш", "Кір жуғыш жуу кезінде бұзылды (кір жуғыш мәзірінен хабарланды).", None, now,
             anonymous=False,
         )
         notices += report_notices
         _, day_end = day_bounds(local_today(now))
         notices += start_maintenance(
-            conn, uid, "washer broke down, mentors are on it", now, until=day_end,
-            apology="Sorry for the inconvenience 🙏",
+            conn, uid, "кір жуғыш бұзылды, тәлімгерлер айналысып жатыр", now, until=day_end,
+            apology="Қолайсыздық үшін кешірім сұраймыз 🙏",
         )
     return notices
 
 
 def force_free(conn, actor: int, booking_id: int, now: datetime) -> list[Notice]:
-    return cancel_booking(conn, booking_id, now, reason="freed by a mentor", by_mentor=actor)
+    return cancel_booking(conn, booking_id, now, reason="тәлімгер босатты", by_mentor=actor)
 
 
 def force_book(conn, actor: int, target: int, d: date, hhmm: str, cycle: str, now: datetime) -> list[Notice]:
     with tx(conn):
         b = book(conn, target, d, hhmm, cycle, now, check_rules=False, check_block=False, forced=True)
         audit.log(conn, actor, "washer_force_book", f"{users.name_of(conn, target)} {summary(b)}")
-    return [Notice(target, f"🧺 A mentor booked the washer for you: {summary(b)}")]
+    return [Notice(target, f"🧺 Тәлімгер сізге кір жуғышты брондап берді: {summary(b)}")]
 
 
 def set_ban(conn, actor: int, uid: int, now: datetime, days: int | None) -> list[Notice]:
@@ -528,8 +530,8 @@ def set_ban(conn, actor: int, uid: int, now: datetime, days: int | None) -> list
         conn.execute("UPDATE users SET washer_ban_until = ? WHERE tg_id = ?", (until, uid))
         audit.log(conn, actor, "washer_ban" if days else "washer_unban", users.name_of(conn, uid))
     if days:
-        return [Notice(uid, f"🚫 A mentor paused your washer bookings for {days} days.", silent=False)]
-    return [Notice(uid, "✅ You can book the washer again.")]
+        return [Notice(uid, f"🚫 Тәлімгер сіздің кір жуғышты брондауыңызды {days} күнге тоқтатты.", silent=False)]
+    return [Notice(uid, "✅ Кір жуғышты қайта брондай аласыз.")]
 
 
 # ---------------------------------------------------------------- recurring slots
@@ -539,9 +541,9 @@ def request_recurring(conn, uid: int, weekday: int, hhmm: str, cycle: str, now: 
         if conn.execute(
             "SELECT 1 FROM recurring WHERE user_id = ? AND status IN ('pending', 'approved')", (uid,)
         ).fetchone():
-            raise BookingError("already", "You already have a recurring slot or a pending request.")
+            raise BookingError("already", "Сізде апта сайынғы слот немесе қаралып жатқан өтініш бар.")
         if conn.execute("SELECT COUNT(*) FROM recurring WHERE status = 'approved'").fetchone()[0] >= RECURRING_CAP:
-            raise BookingError("cap", f"All {RECURRING_CAP} recurring places are taken right now.")
+            raise BookingError("cap", f"Апта сайынғы {RECURRING_CAP} орынның бәрі қазір бос емес.")
         cur = conn.execute(
             "INSERT INTO recurring(user_id, weekday, slot_time, cycle, status, created_at) "
             "VALUES (?, ?, ?, ?, 'pending', ?)",
@@ -550,9 +552,9 @@ def request_recurring(conn, uid: int, weekday: int, hhmm: str, cycle: str, now: 
         rid = cur.lastrowid
         return users.notify_mentors(
             conn,
-            f"🔁 {users.name_of(conn, uid)} requests a recurring washer slot: every {WEEKDAYS[weekday]} "
+            f"🔁 {users.name_of(conn, uid)} апта сайынғы кір жуғыш слотын сұрайды: әр {WEEKDAYS[weekday]} "
             f"{hhmm} ({cycle_label(cycle)}).",
-            kb([("Approve", f"a:recok:{rid}"), ("Reject", f"a:recno:{rid}")]),
+            kb([("Мақұлдау", f"a:recok:{rid}"), ("Қабылдамау", f"a:recno:{rid}")]),
             silent=True,
         )
 
@@ -561,11 +563,11 @@ def decide_recurring(conn, actor: int, rid: int, approve: bool, now: datetime) -
     with tx(conn):
         r = conn.execute("SELECT * FROM recurring WHERE id = ?", (rid,)).fetchone()
         if not r or r["status"] != "pending":
-            raise BookingError("gone", "That request was already handled.")
+            raise BookingError("gone", "Бұл өтініш қаралып қойған.")
         if approve and conn.execute(
             "SELECT COUNT(*) FROM recurring WHERE status = 'approved'"
         ).fetchone()[0] >= RECURRING_CAP:
-            raise BookingError("cap", f"Already {RECURRING_CAP} recurring slots approved.")
+            raise BookingError("cap", f"Апта сайынғы {RECURRING_CAP} слот мақұлданып қойған.")
         conn.execute(
             "UPDATE recurring SET status = ?, decided_by = ? WHERE id = ?",
             ("approved" if approve else "rejected", actor, rid),
@@ -573,9 +575,9 @@ def decide_recurring(conn, actor: int, rid: int, approve: bool, now: datetime) -
         audit.log(conn, actor, "recurring_" + ("approve" if approve else "reject"),
                   f"{users.name_of(conn, r['user_id'])} {WEEKDAYS[r['weekday']]} {r['slot_time']}")
         text = (
-            f"✅ Your recurring slot (every {WEEKDAYS[r['weekday']]} {r['slot_time']}) was approved. "
-            "I'll book it automatically each week."
-            if approve else "Your recurring slot request was not approved this time."
+            f"✅ Апта сайынғы слотыңыз (әр {WEEKDAYS[r['weekday']]} {r['slot_time']}) мақұлданды. "
+            "Оны әр апта автоматты түрде брондаймын."
+            if approve else "Апта сайынғы слот өтінішіңіз бұл жолы мақұлданбады."
         )
         notices = [Notice(r["user_id"], text)]
     if approve:
@@ -590,7 +592,7 @@ def end_recurring(conn, actor: int, rid: int) -> list[Notice]:
             return []
         conn.execute("UPDATE recurring SET status = 'ended' WHERE id = ?", (rid,))
         audit.log(conn, actor, "recurring_end", users.name_of(conn, r["user_id"]))
-    return [Notice(r["user_id"], f"Your recurring washer slot (every {WEEKDAYS[r['weekday']]} {r['slot_time']}) has ended.")]
+    return [Notice(r["user_id"], f"Апта сайынғы кір жуғыш слотыңыз (әр {WEEKDAYS[r['weekday']]} {r['slot_time']}) аяқталды.")]
 
 
 def materialize_recurring(conn, now: datetime) -> list[Notice]:
@@ -606,10 +608,10 @@ def materialize_recurring(conn, now: datetime) -> list[Notice]:
                 continue
             try:
                 b = book(conn, r["user_id"], d, r["slot_time"], r["cycle"], now, check_rules=False, recurring_id=r["id"])
-                notices.append(Notice(r["user_id"], f"🔁 Your recurring washer slot is booked: {summary(b)}"))
+                notices.append(Notice(r["user_id"], f"🔁 Апта сайынғы кір жуғыш слотыңыз брондалды: {summary(b)}"))
             except BookingError as e:
                 notices.append(Notice(
-                    r["user_id"], f"🔁 Couldn't book your recurring slot on {fmt_date(d)} {r['slot_time']}: {e.message}"
+                    r["user_id"], f"🔁 {fmt_date(d)} {r['slot_time']} апта сайынғы слотыңызды брондау мүмкін болмады: {e.message}"
                 ))
     return notices
 
@@ -623,24 +625,24 @@ def tick(conn, now: datetime) -> list[Notice]:
 
     for b in conn.execute("SELECT * FROM bookings WHERE status = 'booked' ORDER BY slot_start").fetchall():
         start = from_db(b["slot_start"])
-        cancel_btn = ("Cancel", f"w:cx:{b['id']}")
+        cancel_btn = ("Болдырмау", f"w:cx:{b['id']}")
         if not b["remind_sent"] and start - REMIND_BEFORE <= now < start:
             conn.execute("UPDATE bookings SET remind_sent = 1 WHERE id = ?", (b["id"],))
             notices.append(Notice(
-                b["user_id"], f"🧺 Your washer slot starts in 15 min ({b['slot_time']}).{heavy_warning(conn, b)}",
-                kb([("▶️ Started", f"w:st:{b['id']}"), cancel_btn]),
+                b["user_id"], f"🧺 Кір жуғыш слотыңыз 15 минуттан кейін басталады ({b['slot_time']}).{heavy_warning(conn, b)}",
+                kb([("▶️ Бастадым", f"w:st:{b['id']}"), cancel_btn]),
             ))
         elif not b["start_prompt_sent"] and start <= now < start + START_GRACE:
             conn.execute("UPDATE bookings SET start_prompt_sent = 1, remind_sent = 1 WHERE id = ?", (b["id"],))
             notices.append(Notice(
-                b["user_id"], f"🧺 Your washer slot has started ({b['slot_time']}). Tap Started once the machine is running.",
-                kb([("▶️ Started", f"w:st:{b['id']}"), cancel_btn]),
+                b["user_id"], f"🧺 Кір жуғыш слотыңыз басталды ({b['slot_time']}). Машинаны қосқан соң «Бастадым» батырмасын басыңыз.",
+                kb([("▶️ Бастадым", f"w:st:{b['id']}"), cancel_btn]),
             ))
         elif b["still_prompt_at"] is None and now >= start + START_GRACE:
             conn.execute("UPDATE bookings SET still_prompt_at = ?, start_prompt_sent = 1 WHERE id = ?", (n, b["id"]))
             notices.append(Notice(
-                b["user_id"], "❓ Still using the washer? If I don't hear back in 10 min, the slot goes to the next person.",
-                kb([("Yes, I'm using it", f"w:yes:{b['id']}"), cancel_btn]),
+                b["user_id"], "❓ Кір жуғышты пайдаланып жатырсыз ба? 10 минут ішінде жауап болмаса, слот келесі адамға беріледі.",
+                kb([("Иә, пайдаланып жатырмын", f"w:yes:{b['id']}"), cancel_btn]),
                 silent=False,
             ))
         elif b["still_prompt_at"] and now >= from_db(b["still_prompt_at"]) + STILL_REPLY:
@@ -659,8 +661,8 @@ def tick(conn, now: datetime) -> list[Notice]:
             )
             if not b["end_prompt_sent"]:
                 notices.append(Notice(
-                    b["user_id"], "⏰ Your washer time is up. Please collect your laundry!",
-                    kb([("✅ Done", f"w:done:{b['id']}"), ("⏳ Running late (+15m)", f"w:late:{b['id']}")]),
+                    b["user_id"], "⏰ Кір жуу уақытыңыз бітті. Киімдеріңізді алып кетіңіз!",
+                    kb([("✅ Бітті", f"w:done:{b['id']}"), ("⏳ Кешігіп жатыр (+15 мин)", f"w:late:{b['id']}")]),
                 ))
 
     # Expired claim windows -> next person in line
@@ -668,7 +670,7 @@ def tick(conn, now: datetime) -> list[Notice]:
         "SELECT * FROM waitlist WHERE status = 'offered' AND offered_at <= ?", (to_db(now - CLAIM_WINDOW),)
     ).fetchall():
         conn.execute("UPDATE waitlist SET status = 'expired' WHERE id = ?", (w["id"],))
-        notices.append(Notice(w["user_id"], "⌛ The claim window for the freed washer slot has passed."))
+        notices.append(Notice(w["user_id"], "⌛ Босаған кір жуғыш слотын алу уақыты өтіп кетті."))
         notices += offer_next(conn, w["slot_start"], now)
 
     # Waitlists for slots long gone
@@ -685,17 +687,17 @@ def _mark_noshow(conn, b, now: datetime) -> list[Notice]:
     with tx(conn):
         conn.execute("UPDATE bookings SET status = 'noshow', finished_at = ? WHERE id = ?", (to_db(now), b["id"]))
         count = noshows_this_month(conn, b["user_id"], now)
-        text = f"🚫 Your washer slot ({b['slot_time']}) was marked as a no-show and given away. ({count} this month)"
+        text = f"🚫 Кір жуғыш слотыңыз ({b['slot_time']}) «келмеді» деп белгіленіп, басқа адамға берілді. (осы айда {count} рет)"
         if count >= NOSHOW_LIMIT:
             user = users.get(conn, b["user_id"])
             if not ban_until(user, now):
                 until = now + timedelta(days=BAN_DAYS)
                 conn.execute("UPDATE users SET washer_ban_until = ? WHERE tg_id = ?", (to_db(until), b["user_id"]))
-                text += f"\nThat's {NOSHOW_LIMIT} this month, so booking is paused until {fmt_dt(until)}. A mentor can lift this."
+                text += f"\nБұл осы айда {NOSHOW_LIMIT}-ші рет, сондықтан брондау {fmt_dt(until)} дейін тоқтатылды. Тәлімгер бұл шектеуді алып тастай алады."
                 notices += users.notify_mentors(
                     conn,
-                    f"⚠️ {user['name']} has {count} washer no-shows this month and is banned from booking for {BAN_DAYS} days.",
-                    kb([("Lift ban", f"a:uunban:{b['user_id']}")]),
+                    f"⚠️ {user['name']} осы айда кір жуғышқа {count} рет келмеді, сондықтан {BAN_DAYS} күнге брондауға тыйым салынды.",
+                    kb([("Тыйымды алу", f"a:uunban:{b['user_id']}")]),
                 )
         notices.insert(0, Notice(b["user_id"], text, silent=False))
         notices += offer_next(conn, b["slot_start"], now)
@@ -711,28 +713,28 @@ def stats_text(conn, now: datetime, days: int = 30) -> str:
     ).fetchall()
     by_status = {r["status"]: r["c"] for r in rows}
     total = sum(by_status.values())
-    lines = [f"🧺 Washer — last {days} days", f"Bookings: {total} " + " · ".join(f"{k} {v}" for k, v in sorted(by_status.items()))]
+    lines = [f"🧺 Кір жуғыш — соңғы {days} күн", f"Брондау: {total} " + " · ".join(f"{BOOKING_STATUS.get(k, k)} {v}" for k, v in sorted(by_status.items()))]
     peak = conn.execute(
         "SELECT slot_time, COUNT(*) c FROM bookings WHERE slot_date >= ? AND status IN ('done', 'active', 'booked') "
         "GROUP BY slot_time ORDER BY c DESC LIMIT 3", (since,),
     ).fetchall()
     if peak:
-        lines.append("Peak slots: " + ", ".join(f"{r['slot_time']} ({r['c']})" for r in peak))
+        lines.append("Ең көп сұралған слоттар: " + ", ".join(f"{r['slot_time']} ({r['c']})" for r in peak))
     top = conn.execute(
         "SELECT u.name, COUNT(*) c FROM bookings b JOIN users u ON u.tg_id = b.user_id "
         "WHERE slot_date >= ? AND b.status IN ('done', 'active', 'booked') GROUP BY b.user_id ORDER BY c DESC LIMIT 5",
         (since,),
     ).fetchall()
     if top:
-        lines.append("Top users: " + ", ".join(f"{r['name']} ({r['c']})" for r in top))
+        lines.append("Белсенді пайдаланушылар: " + ", ".join(f"{r['name']} ({r['c']})" for r in top))
     ns = conn.execute(
         "SELECT u.name, SUM(b.status = 'noshow') ns, SUM(b.status IN ('done', 'noshow')) tot, SUM(b.late_cancel) lc "
         "FROM bookings b JOIN users u ON u.tg_id = b.user_id WHERE slot_date >= ? GROUP BY b.user_id "
         "HAVING ns > 0 OR lc > 0 ORDER BY ns DESC", (since,),
     ).fetchall()
     if ns:
-        lines.append("No-shows / late cancels:")
+        lines.append("Келмеулер / соңғы сәтте болдырмаулар:")
         for r in ns:
             rate = f"{100 * r['ns'] // r['tot']}%" if r["tot"] else "—"
-            lines.append(f"  • {r['name']}: {r['ns']} no-shows ({rate}), {r['lc']} late cancels")
+            lines.append(f"  • {r['name']}: {r['ns']} рет келмеді ({rate}), {r['lc']} рет соңғы сәтте болдырмады")
     return "\n".join(lines)

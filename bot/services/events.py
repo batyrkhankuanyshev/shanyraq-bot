@@ -7,7 +7,7 @@ from ..notices import Notice, kb
 from ..timeutil import fmt_dt, from_db, to_db
 from . import audit, users
 
-RSVP = {"going": "✅ Going", "maybe": "🤔 Maybe", "cant": "❌ Can't"}
+RSVP = {"going": "✅ Барамын", "maybe": "🤔 Мүмкін", "cant": "❌ Бара алмаймын"}
 REMIND_BEFORE = timedelta(hours=1)
 
 
@@ -23,14 +23,14 @@ def counts(conn, eid: int) -> dict[str, int]:
 
 
 def text_of(conn, e, with_counts: bool = True) -> str:
-    lines = [f"📅 {e['title']}" + (" (weekly)" if e["recurring"] else ""), f"🕒 {fmt_dt(from_db(e['starts_at']))}"]
+    lines = [f"📅 {e['title']}" + (" (апта сайын)" if e["recurring"] else ""), f"🕒 {fmt_dt(from_db(e['starts_at']))}"]
     if e["location"]:
         lines.append(f"📍 {e['location']}")
     if e["description"]:
         lines.append(e["description"])
     if with_counts:
         c = counts(conn, e["id"])
-        lines.append(f"Going {c['going']} · Maybe {c['maybe']} · Can't {c['cant']}")
+        lines.append(f"Барады {c['going']} · Мүмкін {c['maybe']} · Бара алмайды {c['cant']}")
     return "\n".join(lines)
 
 
@@ -39,7 +39,7 @@ def rsvp_buttons(eid: int):
 
 
 def _announce(conn, e, creator: int | None, silent: bool) -> list[Notice]:
-    text = "🆕 New event!\n" + text_of(conn, e, with_counts=False)
+    text = "🆕 Жаңа іс-шара!\n" + text_of(conn, e, with_counts=False)
     notices = [Notice(u["tg_id"], text, rsvp_buttons(e["id"]), silent=silent)
                for u in users.everyone(conn) if u["tg_id"] != creator]
     if CONFIG.events_chat_id:
@@ -66,16 +66,16 @@ def create(conn, creator: int, title: str, description: str, location: str, star
 def set_rsvp(conn, eid: int, uid: int, status: str, now: datetime) -> str:
     e = get(conn, eid)
     if not e or e["deleted"] or status not in RSVP:
-        return "This event no longer exists."
+        return "Бұл іс-шара енді жоқ."
     if from_db(e["starts_at"]) < now:
-        return "This event has already started."
+        return "Бұл іс-шара басталып кетті."
     with tx(conn):
         conn.execute(
             "INSERT INTO rsvps(event_id, user_id, status, updated_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(event_id, user_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at",
             (eid, uid, status, to_db(now)),
         )
-    return f"{RSVP[status]} — got it!"
+    return f"{RSVP[status]} — қабылдадым!"
 
 
 def upcoming(conn, now: datetime, limit: int = 10):
@@ -98,7 +98,7 @@ def update_field(conn, actor, eid: int, field: str, value) -> list[Notice]:
         e = get(conn, eid)
         if field != "starts_at":
             return []
-        return [Notice(r["user_id"], "🔁 Event time changed:\n" + text_of(conn, e, with_counts=False))
+        return [Notice(r["user_id"], "🔁 Іс-шараның уақыты өзгерді:\n" + text_of(conn, e, with_counts=False))
                 for r in conn.execute("SELECT user_id FROM rsvps WHERE event_id = ? AND status != 'cant'", (eid,))
                 if r["user_id"] != actor["tg_id"]]
 
@@ -110,7 +110,7 @@ def delete(conn, actor, eid: int) -> list[Notice]:
             return []
         conn.execute("UPDATE events SET deleted = 1 WHERE id = ?", (eid,))
         audit.log(conn, actor["tg_id"], "event_delete", f"#{eid} {e['title']}")
-        return [Notice(r["user_id"], f"🗑 Event cancelled: {e['title']} ({fmt_dt(from_db(e['starts_at']))})")
+        return [Notice(r["user_id"], f"🗑 Іс-шара тоқтатылды: {e['title']} ({fmt_dt(from_db(e['starts_at']))})")
                 for r in conn.execute("SELECT user_id FROM rsvps WHERE event_id = ? AND status != 'cant'", (eid,))
                 if r["user_id"] != actor["tg_id"]]
 
@@ -123,7 +123,7 @@ def tick(conn, now: datetime) -> list[Notice]:
     ).fetchall():
         conn.execute("UPDATE events SET reminder_sent = 1 WHERE id = ?", (e["id"],))
         for r in conn.execute("SELECT user_id FROM rsvps WHERE event_id = ? AND status = 'going'", (e["id"],)):
-            notices.append(Notice(r["user_id"], "⏰ Starting within the hour:\n" + text_of(conn, e, with_counts=False)))
+            notices.append(Notice(r["user_id"], "⏰ Бір сағат ішінде басталады:\n" + text_of(conn, e, with_counts=False)))
     # Weekly recurring events regenerate once their current instance has started
     for e in conn.execute(
         "SELECT * FROM events WHERE deleted = 0 AND recurring = 1 AND regenerated = 0 AND starts_at <= ?", (to_db(now),)

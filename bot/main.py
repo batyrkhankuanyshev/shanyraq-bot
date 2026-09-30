@@ -13,17 +13,17 @@ from .handlers import admin, announce, common, duty, events, guests, reports, wa
 from .jobs import scheduler_loop
 
 COMMANDS = [
-    ("start", "Open main menu"),
-    ("book", "Book the washing machine"),
-    ("mybookings", "My washer bookings"),
-    ("report", "Report a problem"),
-    ("low", "Flag a low-stock item"),
-    ("duty", "My cleaning / buying duty"),
-    ("announcements", "Recent announcements"),
-    ("guests", "Guest log"),
-    ("events", "Upcoming events"),
-    ("admin", "Mentor panel"),
-    ("cancel", "Stop what I'm doing"),
+    ("start", "Басты мәзір"),
+    ("book", "Кір жуғышты брондау"),
+    ("mybookings", "Менің брондауларым"),
+    ("report", "Мәселе туралы хабарлау"),
+    ("low", "Таусылып жатқан зат"),
+    ("duty", "Менің кезекшілігім"),
+    ("announcements", "Соңғы хабарландырулар"),
+    ("guests", "Қонақтар журналы"),
+    ("events", "Алдағы іс-шаралар"),
+    ("admin", "Тәлімгер панелі"),
+    ("cancel", "Әрекетті тоқтату"),
 ]
 
 
@@ -51,9 +51,9 @@ def build_dispatcher(conn) -> Dispatcher:
         target = update.callback_query or update.message
         try:
             if update.callback_query:
-                await update.callback_query.answer("😕 Something went wrong. Please try again or send /menu.", show_alert=True)
+                await update.callback_query.answer("😕 Бірдеңе дұрыс болмады. Қайталап көріңіз немесе /menu жіберіңіз.", show_alert=True)
             elif target:
-                await target.answer("😕 Something went wrong. Please try again or send /menu.")
+                await target.answer("😕 Бірдеңе дұрыс болмады. Қайталап көріңіз немесе /menu жіберіңіз.")
         except Exception:
             pass
         return True

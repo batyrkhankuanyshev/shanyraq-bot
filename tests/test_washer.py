@@ -111,12 +111,12 @@ def _texts(notices, uid=None):
 def test_reminder_start_and_end_flow(conn):
     b = washer.book(conn, S1, DAY, "09:30", "quick", NOW)
     n = washer.tick(conn, at_local(DAY, "09:15"))
-    assert any("starts in 15 min" in t for t in _texts(n, S1))
+    assert any("15 минуттан кейін басталады" in t for t in _texts(n, S1))
     assert all(x.silent for x in n)                      # reminders are silent
     assert washer.tick(conn, at_local(DAY, "09:16")) == []  # no duplicate
     washer.start_booking(conn, b["id"], S1, at_local(DAY, "09:31"))
     n = washer.tick(conn, at_local(DAY, "10:30"))         # quick = 60 min
-    assert any("time is up" in t for t in _texts(n, S1))
+    assert any("уақытыңыз бітті" in t for t in _texts(n, S1))
     assert washer.get_booking(conn, b["id"])["status"] == "done"
 
 
@@ -126,13 +126,13 @@ def test_no_show_detection_frees_slot_and_offers_waitlist(conn):
     washer.tick(conn, at_local(DAY, "09:15"))
     washer.tick(conn, at_local(DAY, "09:30"))
     n = washer.tick(conn, at_local(DAY, "09:45"))         # +15: still using it?
-    assert any("Still using" in t for t in _texts(n, S1))
+    assert any("пайдаланып жатырсыз ба" in t for t in _texts(n, S1))
     assert washer.tick(conn, at_local(DAY, "09:50")) == []  # waiting for reply
     n = washer.tick(conn, at_local(DAY, "09:55"))         # +10 more: no-show
     assert washer.get_booking(conn, b["id"])["status"] == "noshow"
-    assert any("no-show" in t for t in _texts(n, S1))
+    assert any("келмеді" in t for t in _texts(n, S1))
     offer = [x for x in n if x.chat_id == S2]
-    assert offer and "Claim" in offer[0].text and not offer[0].silent
+    assert offer and "алып үлгеріңіз" in offer[0].text and not offer[0].silent
 
 
 def test_answering_still_using_prevents_no_show(conn):
@@ -161,7 +161,7 @@ def test_done_early_notifies_next_holder(conn):
     washer.book(conn, S2, DAY, "11:00", "normal", NOW)
     washer.start_booking(conn, b["id"], S1, at_local(DAY, "09:30"))
     _, n = washer.finish_booking(conn, b["id"], S1, at_local(DAY, "10:20"))
-    assert any(x.chat_id == S2 and "free early" in x.text for x in n)
+    assert any(x.chat_id == S2 and "ерте босады" in x.text for x in n)
 
 
 def test_running_late_notifies_next_and_extends(conn):
@@ -170,7 +170,7 @@ def test_running_late_notifies_next_and_extends(conn):
     washer.start_booking(conn, b["id"], S1, at_local(DAY, "09:30"))
     washer.tick(conn, at_local(DAY, "11:00"))  # end prompt, auto-done
     _, n = washer.running_late(conn, b["id"], S1, at_local(DAY, "11:02"))
-    assert any(x.chat_id == S2 and "running late" in x.text for x in n)
+    assert any(x.chat_id == S2 and "кешігіп жатыр" in x.text for x in n)
     assert washer.get_booking(conn, b["id"])["status"] == "active"
     washer.tick(conn, at_local(DAY, "11:15"))
     assert washer.get_booking(conn, b["id"])["status"] == "done"
@@ -188,8 +188,8 @@ def test_waitlist_claim_window_expires_and_moves_on(conn):
     wl2 = conn.execute("SELECT id FROM waitlist WHERE user_id = ?", (S2,)).fetchone()["id"]
     assert washer.tick(conn, t + timedelta(minutes=4)) == []       # still inside window
     n = washer.tick(conn, t + timedelta(minutes=5))                 # window over
-    assert any(x.chat_id == S2 and "passed" in x.text for x in n)
-    assert any(x.chat_id == S3 and "Claim" in x.text for x in n)
+    assert any(x.chat_id == S2 and "өтіп кетті" in x.text for x in n)
+    assert any(x.chat_id == S3 and "алып үлгеріңіз" in x.text for x in n)
     with pytest.raises(BookingError) as e:
         washer.claim(conn, wl2, S2, "normal", t + timedelta(minutes=6))
     assert e.value.code == "expired"
@@ -221,7 +221,7 @@ def test_maintenance_cancels_bookings_and_clears_waitlist(conn):
     n = washer.start_maintenance(conn, MENTORS[0], "pipe leak", NOW)
     assert washer.get_booking(conn, b["id"])["status"] == "cancelled"
     assert any(x.chat_id == S1 and "pipe leak" in x.text for x in n)
-    assert any(x.chat_id == S2 and "cleared" in x.text for x in n)
+    assert any(x.chat_id == S2 and "тазартылды" in x.text for x in n)
     with pytest.raises(BookingError) as e:
         washer.book(conn, S3, DAY, "17:00", "quick", NOW)
     assert e.value.code == "blocked"
@@ -239,7 +239,7 @@ def test_breakdown_blocks_rest_of_day_only(conn):
     assert washer.get_booking(conn, later["id"])["status"] == "cancelled"
     assert washer.get_booking(conn, tomorrow["id"])["status"] == "booked"
     assert {x.chat_id for x in n} >= set(MENTORS)
-    assert conn.execute("SELECT COUNT(*) FROM reports WHERE area = 'Washer'").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM reports WHERE area = 'Кір жуғыш'").fetchone()[0] == 1
 
 
 # ---------------------------------------------------------------- recurring & deactivation

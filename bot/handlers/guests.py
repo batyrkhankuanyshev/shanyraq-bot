@@ -31,19 +31,19 @@ async def menu(event: Message | CallbackQuery, user, conn, state: FSMContext):
         return await not_registered(event)
     await state.clear()
     mine = guests.active_for(conn, user["tg_id"], utcnow())
-    lines = ["🚪 Your guests:"] + [f"• {guests.describe(g)}" for g in mine] if mine else ["🚪 You have no active guests."]
-    rows = [[(f"👋 Check out {g['name']}", f"g:out:{g['id']}")] for g in mine]
-    rows.append([("➕ Register guest", "g:new")])
+    lines = ["🚪 Сіздің қонақтарыңыз:"] + [f"• {guests.describe(g)}" for g in mine] if mine else ["🚪 Сізде белсенді қонақ жоқ."]
+    rows = [[(f"👋 {g['name']} кетті", f"g:out:{g['id']}")] for g in mine]
+    rows.append([("➕ Қонақ тіркеу", "g:new")])
     if users.is_mentor(user):
-        rows.append([("📋 Guests today", "g:today"), ("⏳ Pending", "a:g")])
-    rows.append([("⬅️ Menu", "menu")])
+        rows.append([("📋 Бүгінгі қонақтар", "g:today"), ("⏳ Күтудегілер", "a:g")])
+    rows.append([("⬅️ Мәзір", "menu")])
     await show(event, "\n".join(lines), kb(*rows))
 
 
 @router.callback_query(F.data == "g:new")
 async def ask_name(cb: CallbackQuery, state: FSMContext):
     await state.set_state(GuestFlow.name)
-    await show(cb, "What's your guest's name? /cancel to stop.")
+    await show(cb, "Қонағыңыздың аты кім? Тоқтату үшін /cancel.")
 
 
 @router.message(GuestFlow.name, F.text)
@@ -52,7 +52,7 @@ async def got_name(message: Message, state: FSMContext):
     await state.set_state(GuestFlow.details)
     today = local_today(utcnow())
     days = [today + timedelta(days=i) for i in range(7)]
-    await message.answer("📅 Arrival date?", reply_markup=kb(*grid([(day_label(d, today), f"g:d:{dkey(d)}") for d in days], 2)))
+    await message.answer("📅 Келетін күні?", reply_markup=kb(*grid([(day_label(d, today), f"g:d:{dkey(d)}") for d in days], 2)))
 
 
 @router.callback_query(GuestFlow.details, F.data.startswith("g:d:"))
@@ -61,8 +61,8 @@ async def got_date(cb: CallbackQuery, state: FSMContext):
     await state.update_data(day=dk)
     buttons = [(t, f"g:t:{t.replace(':', '')}") for t in ARRIVAL_TIMES]
     if parse_dkey(dk) == local_today(utcnow()):
-        buttons.insert(0, ("Now", "g:t:now"))
-    await show(cb, "🕒 Arrival time?", kb(*grid(buttons, 3)))
+        buttons.insert(0, ("Қазір", "g:t:now"))
+    await show(cb, "🕒 Келетін уақыты?", kb(*grid(buttons, 3)))
 
 
 @router.callback_query(GuestFlow.details, F.data.startswith("g:t:"))
@@ -71,7 +71,7 @@ async def got_time(cb: CallbackQuery, state: FSMContext):
     d = await state.get_data()
     arrive = utcnow() if raw == "now" else at_local(parse_dkey(d["day"]), f"{raw[:2]}:{raw[2:]}")
     await state.update_data(arrive=to_db(arrive))
-    await show(cb, "⏱ How long will they stay? (nights = overnight, needs mentor approval)",
+    await show(cb, "⏱ Қанша уақыт болады? (түнеу үшін тәлімгердің рұқсаты керек)",
                kb(*grid([(label, f"g:dur:{code}") for code, (label, _, _) in DURATIONS.items()], 3)))
 
 
@@ -82,16 +82,16 @@ async def got_duration(cb: CallbackQuery, state: FSMContext, conn, bot, user):
     try:
         msg, notices = guests.register(conn, user["tg_id"], d["name"], from_db(d["arrive"]), cb.data.split(":")[2], utcnow())
     except ValueError as e:
-        await show(cb, f"😕 {e}", kb([("⬅️ Guests", "g:menu")]))
+        await show(cb, f"😕 {e}", kb([("⬅️ Қонақтар", "g:menu")]))
         return
-    await show(cb, msg, kb([("⬅️ Guests", "g:menu")]))
+    await show(cb, msg, kb([("⬅️ Қонақтар", "g:menu")]))
     await deliver(bot, conn, notices)
 
 
 @router.callback_query(F.data.startswith("g:out:"))
 async def check_out(cb: CallbackQuery, user, conn):
     ok = guests.check_out(conn, user["tg_id"], int(cb.data.split(":")[2]), utcnow())
-    await show(cb, "👋 Checked out. Thanks!" if ok else "That guest is already checked out.", kb([("⬅️ Guests", "g:menu")]))
+    await show(cb, "👋 Қонақ кетті деп белгіленді. Рақмет!" if ok else "Бұл қонақ кетті деп белгіленген.", kb([("⬅️ Қонақтар", "g:menu")]))
 
 
 @router.callback_query(F.data.startswith("g:ap:"))
@@ -102,9 +102,9 @@ async def approve(cb: CallbackQuery, user, conn, bot):
         notices = guests.decide(conn, user["tg_id"], int(cb.data.split(":")[2]), True)
     except ValueError as e:
         return await cb.answer(str(e), show_alert=True)
-    await cb.answer("Approved ✅")
+    await cb.answer("Мақұлданды ✅")
     try:
-        await cb.message.edit_text(cb.message.text + f"\n\n✅ Approved by {user['name']}")
+        await cb.message.edit_text(cb.message.text + f"\n\n✅ {user['name']} мақұлдады")
     except Exception:
         pass
     await deliver(bot, conn, notices)
@@ -117,7 +117,7 @@ async def reject_ask(cb: CallbackQuery, user, state: FSMContext):
     await state.set_state(GuestFlow.reject_reason)
     await state.update_data(gid=int(cb.data.split(":")[2]))
     await cb.answer()
-    await cb.message.answer("Why is it rejected? (the host will see this) /cancel to stop.")
+    await cb.message.answer("Неге қабылданбады? (қонақ иесі көреді) Тоқтату үшін /cancel.")
 
 
 @router.message(GuestFlow.reject_reason, F.text)
@@ -129,7 +129,7 @@ async def reject(message: Message, state: FSMContext, user, conn, bot):
     except ValueError as e:
         await message.answer(str(e))
         return
-    await message.answer("❌ Rejected, host notified.")
+    await message.answer("❌ Қабылданбады, қонақ иесіне хабарланды.")
     await deliver(bot, conn, notices)
 
 
@@ -139,11 +139,11 @@ async def today(event: Message | CallbackQuery, user, conn):
     if not users.is_mentor(user):
         return await not_allowed(event)
     rows = guests.today_list(conn, utcnow())
-    lines = ["📋 Guests today:"] + [f"• {g['name']} (host {g['host_name']}) {fmt_dt(from_db(g['arrive_at']))} → "
-                                    f"{fmt_dt(from_db(g['depart_at']))} · {g['status']}" for g in rows]
+    lines = ["📋 Бүгінгі қонақтар:"] + [f"• {g['name']} (қабылдаушы: {g['host_name']}) {fmt_dt(from_db(g['arrive_at']))} → "
+                                    f"{fmt_dt(from_db(g['depart_at']))} · {guests.STATUS_KK[g['status']]}" for g in rows]
     if not rows:
-        lines.append("No guests today.")
-    await show(event, "\n".join(lines), kb([("⬅️ Menu", "menu")]))
+        lines.append("Бүгін қонақ жоқ.")
+    await show(event, "\n".join(lines), kb([("⬅️ Мәзір", "menu")]))
 
 
 @router.callback_query(F.data == "a:g")
@@ -152,9 +152,9 @@ async def pending(cb: CallbackQuery, user, conn):
         return await not_allowed(cb)
     rows = guests.pending(conn)
     if not rows:
-        await show(cb, "No pending overnight requests.", kb([("⬅️ Admin", "a:menu")]))
+        await show(cb, "Түнеуге күтудегі өтініш жоқ.", kb([("⬅️ Басқару", "a:menu")]))
         return
-    await show(cb, "⏳ Pending overnight requests:", kb([("⬅️ Admin", "a:menu")]))
+    await show(cb, "⏳ Түнеуге күтудегі өтініштер:", kb([("⬅️ Басқару", "a:menu")]))
     for g in rows:
         await cb.message.answer(f"{g['host_name']}: {guests.describe(g)}",
-                                reply_markup=kb([("✅ Approve", f"g:ap:{g['id']}"), ("❌ Reject", f"g:rj:{g['id']}")]))
+                                reply_markup=kb([("✅ Мақұлдау", f"g:ap:{g['id']}"), ("❌ Қабылдамау", f"g:rj:{g['id']}")]))

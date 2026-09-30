@@ -18,9 +18,9 @@ from ..notices import Notice, kb
 from ..timeutil import fmt_dt, from_db, local_today, to_db
 from . import audit, users
 
-AREAS = ["Washer", "Kitchen", "Bathroom", "Electricity", "Plumbing", "Wi-Fi", "Furniture", "Other"]
-ANON_CATEGORIES = ["Noise", "Cleanliness", "Rule violation", "Conflict", "Safety", "Other"]
-STATUSES = {"open": "🔴 open", "in_progress": "🟡 in progress", "fixed": "🟢 fixed"}
+AREAS = ["Кір жуғыш", "Ас үй", "Жуынатын бөлме", "Электр", "Сантехника", "Wi-Fi", "Жиһаз", "Басқа"]
+ANON_CATEGORIES = ["Шу", "Тазалық", "Ереже бұзу", "Жанжал", "Қауіпсіздік", "Басқа"]
+STATUSES = {"open": "🔴 ашық", "in_progress": "🟡 жөнделуде", "fixed": "🟢 жөнделді"}
 DUPLICATE_WINDOW = timedelta(hours=2)
 ANON_DAILY_LIMIT = 3
 
@@ -35,15 +35,15 @@ def recent_duplicate(conn, area: str, now: datetime):
 
 
 def report_text(conn, r) -> str:
-    who = users.name_of(conn, r["reporter_id"]) if r["reporter_id"] else "anonymous"
+    who = users.name_of(conn, r["reporter_id"]) if r["reporter_id"] else "анонимді"
     return (
-        f"🛠 Maintenance #{r['id']} — {r['area']}\n{r['description']}\n"
-        f"Reported by {who}, {fmt_dt(from_db(r['created_at']))}\nStatus: {STATUSES[r['status']]}"
+        f"🛠 Ақаулық №{r['id']} — {r['area']}\n{r['description']}\n"
+        f"Хабарлаған: {who}, {fmt_dt(from_db(r['created_at']))}\nКүйі: {STATUSES[r['status']]}"
     )
 
 
 def status_buttons(rid: int):
-    return kb([("🟡 In progress", f"r:ms:{rid}:in_progress"), ("🟢 Fixed", f"r:ms:{rid}:fixed")])
+    return kb([("🟡 Жөнделуде", f"r:ms:{rid}:in_progress"), ("🟢 Жөнделді", f"r:ms:{rid}:fixed")])
 
 
 def create_maintenance(conn, uid: int, area: str, description: str, photo_id: str | None, now: datetime,
@@ -71,8 +71,8 @@ def set_status(conn, actor: int, rid: int, status: str, now: datetime) -> list[N
         audit.log(conn, actor, "report_status", f"#{rid} {r['area']} -> {status}")
         notices = []
         if r["reporter_id"] and status in ("fixed", "in_progress"):
-            msg = "is fixed ✅ Thanks for reporting!" if status == "fixed" else "is being worked on 🔧"
-            notices.append(Notice(r["reporter_id"], f"Your report #{rid} ({r['area']}) {msg}"))
+            msg = "жөнделді ✅ Хабарлағаныңызға рақмет!" if status == "fixed" else "бойынша жұмыс басталды 🔧"
+            notices.append(Notice(r["reporter_id"], f"Сіздің №{rid} өтінішіңіз ({r['area']}) {msg}"))
     return notices
 
 
@@ -117,12 +117,12 @@ def _hash_token(token: str) -> str:
 
 
 def anon_text(r, messages=()) -> str:
-    lines = [f"🕶 Anonymous report #{r['id']} — {r['category']}", r["description"],
-             f"Received {fmt_dt(from_db(r['created_at']))}"]
+    lines = [f"🕶 Анонимді шағым №{r['id']} — {r['category']}", r["description"],
+             f"Түскен уақыты: {fmt_dt(from_db(r['created_at']))}"]
     if r["status"] == "closed":
-        lines.append("Status: closed")
+        lines.append("Күйі: жабылды")
     for m in messages:
-        who = "Mentor" if m["sender"] == "mentor" else "Reporter"
+        who = "Тәлімгер" if m["sender"] == "mentor" else "Шағым иесі"
         lines.append(f"— {who}: {m['text']}")
     return "\n".join(lines)
 
@@ -130,9 +130,9 @@ def anon_text(r, messages=()) -> str:
 def anon_buttons(r):
     rows = []
     if r["token_hash"] and r["status"] == "open":
-        rows.append([("💬 Reply anonymously", f"r:ar:{r['id']}")])
+        rows.append([("💬 Анонимді жауап беру", f"r:ar:{r['id']}")])
     if r["status"] == "open":
-        rows.append([("Close", f"r:acl:{r['id']}")])
+        rows.append([("Жабу", f"r:acl:{r['id']}")])
     return kb(*rows) if rows else None
 
 
@@ -140,7 +140,7 @@ def create_anonymous(conn, uid: int, category: str, description: str, photo_id: 
                      want_replies: bool, now: datetime) -> tuple[str | None, list[Notice]]:
     """`uid` is used ONLY for the in-memory rate limit and is never stored."""
     if not anon_limiter.allowed(uid, now):
-        raise PermissionError(f"You can send at most {ANON_DAILY_LIMIT} anonymous reports per day.")
+        raise PermissionError(f"Күніне ең көбі {ANON_DAILY_LIMIT} анонимді шағым жіберуге болады.")
     token = ("A-" + secrets.token_hex(4)).upper() if want_replies else None
     with tx(conn):
         cur = conn.execute(
@@ -168,14 +168,14 @@ def mentor_reply(conn, actor: int, rid: int, text: str, now: datetime) -> list[N
     with tx(conn):
         r = conn.execute("SELECT * FROM anon_reports WHERE id = ?", (rid,)).fetchone()
         if not r or not r["token_hash"] or r["status"] != "open":
-            raise ValueError("This report can't receive replies.")
+            raise ValueError("Бұл шағымға жауап беру мүмкін емес.")
         conn.execute(
             "INSERT INTO anon_messages(report_id, sender, text, created_at) VALUES (?, 'mentor', ?, ?)",
             (rid, text, to_db(now)),
         )
         audit.log(conn, actor, "anon_reply", f"#{rid}")
         name = users.name_of(conn, actor)
-        return [Notice(m["tg_id"], f"💬 {name} replied to anonymous report #{rid}: {text}")
+        return [Notice(m["tg_id"], f"💬 {name} №{rid} анонимді шағымға жауап берді: {text}")
                 for m in users.mentors(conn) if m["tg_id"] != actor]
 
 
@@ -183,13 +183,13 @@ def reporter_reply(conn, token: str, text: str, now: datetime) -> list[Notice]:
     with tx(conn):
         r = find_by_token(conn, token)
         if not r or r["status"] != "open":
-            raise ValueError("That thread is closed or the code is wrong.")
+            raise ValueError("Бұл сұхбат жабылған немесе код қате.")
         conn.execute(
             "INSERT INTO anon_messages(report_id, sender, text, created_at) VALUES (?, 'reporter', ?, ?)",
             (r["id"], text, to_db(now)),
         )
         return users.notify_mentors(
-            conn, f"🕶 Anonymous reporter (#{r['id']}) wrote: {text}", anon_buttons(r), silent=False
+            conn, f"🕶 Анонимді шағым иесі (№{r['id']}) жазды: {text}", anon_buttons(r), silent=False
         )
 
 

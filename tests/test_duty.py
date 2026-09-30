@@ -39,14 +39,14 @@ def test_reminder_done_and_missed(conn):
     duty.tick(conn, _sunday_evening(MONDAY))
     due = MONDAY + timedelta(days=5)
     n = duty.tick(conn, at_local(due, "08:00"))
-    reminders = [x for x in n if "duty today" in x.text]
+    reminders = [x for x in n if "Бүгін сіз" in x.text]
     assert len(reminders) == 4
-    assert not any("duty today" in x.text for x in duty.tick(conn, at_local(due, "08:01")))
+    assert not any("Бүгін сіз" in x.text for x in duty.tick(conn, at_local(due, "08:01")))
     first = conn.execute("SELECT * FROM duty WHERE kind = 'cleaning' AND due_date = ? ORDER BY id", (due.isoformat(),)).fetchall()
     text, _ = duty.mark_cleaning_done(conn, first[0]["id"], first[0]["user_id"], at_local(due, "10:00"))
-    assert "Thanks" in text
+    assert "Рақмет" in text
     n = duty.tick(conn, at_local(due, "23:30"))
-    missed = [x for x in n if "didn't mark" in x.text]
+    missed = [x for x in n if "белгілемеді" in x.text]
     assert len(missed) == 3 * len(MENTORS)
 
 
@@ -62,9 +62,9 @@ def test_low_stock_list_and_buyer(conn):
     now = at_local(MONDAY, "09:00")
     duty.tick(conn, now)
     buyer = duty.current_buyer(conn, now)
-    text, n = duty.flag_low(conn, STUDENTS[5] if buyer["user_id"] != STUDENTS[5] else STUDENTS[6], "Dish soap", now)
-    assert "Added" in text and n[0].chat_id == buyer["user_id"]
-    assert "already" in duty.flag_low(conn, STUDENTS[7], "Dish soap", now)[0]
+    text, n = duty.flag_low(conn, STUDENTS[5] if buyer["user_id"] != STUDENTS[5] else STUDENTS[6], "Ыдыс жуғыш сұйықтық", now)
+    assert "қосылды" in text and n[0].chat_id == buyer["user_id"]
+    assert "тізімінде бар" in duty.flag_low(conn, STUDENTS[7], "Ыдыс жуғыш сұйықтық", now)[0]
     item = duty.shopping_list(conn)[0]
     duty.mark_bought(conn, buyer["user_id"], item["id"], now)
     assert duty.shopping_list(conn) == []

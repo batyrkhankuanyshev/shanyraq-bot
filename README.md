@@ -6,6 +6,9 @@ calendar, and a mentor admin panel. Almost everything works through buttons.
 
 - **Stack:** Python 3.11+, [aiogram 3](https://docs.aiogram.dev), SQLite, and a built-in scheduler that runs every minute.
 - **Timezone:** Hong Kong (`HOSTEL_TZ=Asia/Hong_Kong`). Times are stored in UTC and shown in local time.
+- **Language:** the whole bot talks to users in **Kazakh** (Cyrillic): menus, buttons, reminders, and day and month names (e.g. «Бс, 1 қаз 09:30»).
+  Slash commands stay in Latin letters (`/book`, `/report`…) because Telegram requires it; their descriptions in the menu are in Kazakh.
+  All messages live in `bot/handlers/*.py` and `bot/services/*.py`.
 - **Runs on:** a Raspberry Pi or any small Linux machine. It uses polling, so you don't need a domain, HTTPS or port forwarding.
 
 ---

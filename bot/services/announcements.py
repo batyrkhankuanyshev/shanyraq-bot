@@ -7,7 +7,7 @@ from ..notices import Notice
 from ..timeutil import from_db, fmt_dt, local, to_db
 from . import audit, users
 
-TARGETS = {"all": "Everyone", "students": "Students", "mentors": "Mentors"}
+TARGETS = {"all": "Барлығына", "students": "Студенттерге", "mentors": "Тәлімгерлерге"}
 
 
 def text_of(a) -> str:
@@ -22,8 +22,8 @@ def create(conn, author: int, title: str, body: str, photo_id: str | None, targe
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (author, title, body, photo_id, target, int(pin), int(silent), to_db(max(send_at, now)), to_db(now)),
         )
-        when = "now" if send_at <= now else fmt_dt(send_at)
-        audit.log(conn, author, "announce", f"#{cur.lastrowid} '{title}' to {target}, {when}")
+        when = "қазір" if send_at <= now else fmt_dt(send_at)
+        audit.log(conn, author, "announce", f"№{cur.lastrowid} «{title}» → {TARGETS[target]}, {when}")
         return cur.lastrowid
 
 

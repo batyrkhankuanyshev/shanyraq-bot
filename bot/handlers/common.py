@@ -29,11 +29,11 @@ class UserMiddleware(BaseMiddleware):
             return None  # the bot only talks in private chats; groups are for broadcasts
         user = users.get(self.conn, tg_user.id)
         if user is None and isinstance(event, CallbackQuery) and not (event.data or "").startswith("on:"):
-            await event.answer("Please send /start first.", show_alert=True)
+            await event.answer("Алдымен /start жіберіңіз.", show_alert=True)
             return None
         if user and (not user["active"] or user["muted"]):
-            text = "Your account is deactivated. Please talk to a mentor." if not user["active"] else \
-                "You're muted for now. Please talk to a mentor."
+            text = "Аккаунтыңыз өшірілген. Тәлімгерге хабарласыңыз." if not user["active"] else \
+                "Сізге уақытша шектеу қойылған. Тәлімгерге хабарласыңыз."
             if isinstance(event, CallbackQuery):
                 await event.answer(text, show_alert=True)
             elif isinstance(event, Message):
@@ -50,20 +50,20 @@ class Onboarding(StatesGroup):
 
 def main_menu(user):
     rows = [
-        [("🧺 Book Washer", "w:days"), ("📋 My Bookings", "w:my")],
-        [("🚨 Report", "r:menu"), ("🧹 Duty", "d:menu")],
-        [("📢 Announcements", "n:list"), ("🚪 Guests", "g:menu")],
-        [("📅 Events", "e:list")],
+        [("🧺 Кір жуғыш", "w:days"), ("📋 Брондауларым", "w:my")],
+        [("🚨 Хабарлау", "r:menu"), ("🧹 Кезекшілік", "d:menu")],
+        [("📢 Хабарландырулар", "n:list"), ("🚪 Қонақтар", "g:menu")],
+        [("📅 Іс-шаралар", "e:list")],
     ]
     if users.is_mentor(user):
         rows += [
-            [("🛠 Admin Panel", "a:menu"), ("📣 Announce", "n:new")],
-            [("🚪 Guests Today", "g:today"), ("📊 Stats", "a:s")],
+            [("🛠 Басқару панелі", "a:menu"), ("📣 Хабарландыру жасау", "n:new")],
+            [("🚪 Бүгінгі қонақтар", "g:today"), ("📊 Статистика", "a:s")],
         ]
     return kb(*rows)
 
 
-def back(target: str = "menu", label: str = "⬅️ Back"):
+def back(target: str = "menu", label: str = "⬅️ Артқа"):
     return (label, target)
 
 
@@ -84,7 +84,7 @@ async def show(event: Message | CallbackQuery, text: str, markup=None) -> None:
 
 
 async def send_menu(event: Message | CallbackQuery, user, prefix: str = "") -> None:
-    await show(event, (prefix + "\n\n" if prefix else "") + f"Hi {user['name']}! What would you like to do?", main_menu(user))
+    await show(event, (prefix + "\n\n" if prefix else "") + f"Сәлем, {user['name']}! Не істегіңіз келеді?", main_menu(user))
 
 
 @router.message(CommandStart())
@@ -94,19 +94,19 @@ async def start(message: Message, state: FSMContext, user):
         await send_menu(message, user)
         return
     await state.set_state(Onboarding.name)
-    await message.answer("👋 Welcome to the hostel bot! What's your name? (first name is fine)")
+    await message.answer("👋 Жатақхана ботына қош келдіңіз! Атыңыз кім? (тек есіміңіз жеткілікті)")
 
 
 @router.message(Onboarding.name, F.text)
 async def onboarding_name(message: Message, state: FSMContext, conn):
     name = message.text.strip()
     if not 1 <= len(name) <= 40 or name.startswith("/"):
-        await message.answer("Please send just your name (up to 40 characters).")
+        await message.answer("Тек атыңызды жіберіңіз (40 таңбаға дейін).")
         return
     await state.update_data(name=name)
     await message.answer(
-        f"Nice to meet you, {name}! Are you a student or a mentor?",
-        reply_markup=kb([("🎓 Student", "on:role:student"), ("🧑‍🏫 Mentor", "on:role:mentor")]),
+        f"Танысқаныма қуаныштымын, {name}! Сіз студентсіз бе, әлде тәлімгерсіз бе?",
+        reply_markup=kb([("🎓 Студент", "on:role:student"), ("🧑‍🏫 Тәлімгер", "on:role:mentor")]),
     )
 
 
@@ -119,16 +119,16 @@ async def onboarding_role(cb: CallbackQuery, state: FSMContext, conn, bot, user)
         await send_menu(cb, user)
         return
     data = await state.get_data()
-    name = data.get("name") or cb.from_user.first_name or "Friend"
+    name = data.get("name") or cb.from_user.first_name or "Дос"
     requested = cb.data.split(":")[2]
     role = users.role_for_new_user(cb.from_user.id, requested)
     users.register(conn, cb.from_user.id, name, role, utcnow())
     await state.clear()
     note = ""
     if requested == "mentor" and role != "mentor":
-        note = "ℹ️ Mentor accounts are pre-approved by ID, so you're registered as a student for now. Ask a mentor if this is wrong."
+        note = "ℹ️ Тәлімгер аккаунттары ID бойынша алдын ала бекітіледі, сондықтан әзірге студент ретінде тіркелдіңіз. Қате болса, тәлімгерге хабарласыңыз."
     await deliver(bot, conn, users.new_user_notice(conn, cb.from_user.id, name, role))
-    await send_menu(cb, users.get(conn, cb.from_user.id), ("✅ You're registered!\n" + note).strip())
+    await send_menu(cb, users.get(conn, cb.from_user.id), ("✅ Тіркелдіңіз!\n" + note).strip())
 
 
 @router.message(Command("menu"))
@@ -136,7 +136,7 @@ async def onboarding_role(cb: CallbackQuery, state: FSMContext, conn, bot, user)
 async def cmd_menu(message: Message, state: FSMContext, user):
     await state.clear()
     if not user:
-        await message.answer("Please send /start first.")
+        await message.answer("Алдымен /start жіберіңіз.")
         return
     await send_menu(message, user)
 
@@ -145,7 +145,7 @@ async def cmd_menu(message: Message, state: FSMContext, user):
 async def cb_menu(cb: CallbackQuery, state: FSMContext, user):
     await state.clear()
     if not user:
-        await cb.answer("Please send /start first.", show_alert=True)
+        await cb.answer("Алдымен /start жіберіңіз.", show_alert=True)
         return
     await send_menu(cb, user)
 
@@ -161,16 +161,16 @@ def require_user(user) -> bool:
 
 async def not_registered(event: Message | CallbackQuery) -> None:
     if isinstance(event, CallbackQuery):
-        await event.answer("Please send /start first.", show_alert=True)
+        await event.answer("Алдымен /start жіберіңіз.", show_alert=True)
     else:
-        await event.answer("Please send /start first.")
+        await event.answer("Алдымен /start жіберіңіз.")
 
 
 async def not_allowed(event: Message | CallbackQuery) -> None:
     if isinstance(event, CallbackQuery):
-        await event.answer("Mentors only.", show_alert=True)
+        await event.answer("Тек тәлімгерлерге арналған.", show_alert=True)
     else:
-        await event.answer("Mentors only.")
+        await event.answer("Тек тәлімгерлерге арналған.")
 
 
 # Fallback registered last in main.py: anything unexpected gets a friendly nudge.
@@ -180,16 +180,16 @@ fallback_router = Router(name="fallback")
 @fallback_router.message(StateFilter(None))
 async def fallback_message(message: Message, user):
     if not user:
-        await message.answer("👋 Send /start to get going.")
+        await message.answer("👋 Бастау үшін /start жіберіңіз.")
         return
-    await send_menu(message, user, "I didn't catch that — use the buttons below.")
+    await send_menu(message, user, "Түсінбедім — төмендегі батырмаларды пайдаланыңыз.")
 
 
 @fallback_router.message()
 async def fallback_in_flow(message: Message):
-    await message.answer("Please answer the question above, or send /cancel to stop.")
+    await message.answer("Жоғарыдағы сұраққа жауап беріңіз немесе тоқтату үшін /cancel жіберіңіз.")
 
 
 @fallback_router.callback_query()
 async def fallback_callback(cb: CallbackQuery):
-    await cb.answer("This button has expired. Send /menu.", show_alert=True)
+    await cb.answer("Бұл батырманың мерзімі өтті. /menu жіберіңіз.", show_alert=True)

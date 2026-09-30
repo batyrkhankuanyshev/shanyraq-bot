@@ -14,9 +14,9 @@ S1 = STUDENTS[0]
 
 def test_guest_limits_and_approval(conn):
     msg, n = guests.register(conn, S1, "Ann", NOW, "4h", NOW)
-    assert "auto-approved" in msg and all(x.silent for x in n)
+    assert "автоматты түрде мақұлданды" in msg and all(x.silent for x in n)
     msg, n = guests.register(conn, S1, "Bob", NOW, "1n", NOW)
-    assert "requested" in msg and {x.chat_id for x in n} == set(MENTORS)
+    assert "рұқсат сұралды" in msg and {x.chat_id for x in n} == set(MENTORS)
     with pytest.raises(ValueError):
         guests.register(conn, S1, "Cid", NOW, "2h", NOW)
     bob = conn.execute("SELECT id FROM guests WHERE name = 'Bob'").fetchone()["id"]
@@ -25,7 +25,7 @@ def test_guest_limits_and_approval(conn):
     guests.register(conn, S1, "Cid", NOW, "2h", NOW)  # rejected guest freed a place
     assert len(guests.today_list(conn, NOW)) == 2
     n = guests.tick(conn, NOW + timedelta(hours=5))
-    assert {x.text.split("'")[0] for x in n} == {"🚪 Ann", "🚪 Cid"}
+    assert {x.text.split()[1] for x in n} == {"Ann", "Cid"}
 
 
 def test_event_rsvp_reminder_and_recurring(conn):

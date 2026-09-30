@@ -45,7 +45,7 @@ def load_config() -> Config:
         quiet_hours_reminder=_bool(os.getenv("QUIET_HOURS_REMINDER")),
         quiet_hours_text=os.getenv(
             "QUIET_HOURS_TEXT",
-            "🌙 Quiet hours start now (22:00). Please keep the noise down. Thank you!",
+            "🌙 Тыныштық уақыты басталды (22:00). Шу шығармауыңызды сұраймыз. Рақмет!",
         ),
     )
 

@@ -8,8 +8,9 @@ from ..notices import Notice, kb
 from ..timeutil import fmt_date, local, local_today, to_db, week_start
 from . import audit, users
 
-ZONES = ["Kitchen", "Bathroom", "Common room", "Hallway"]
-SUPPLIES = ["Toilet paper", "Paper towels", "Dish soap", "Trash bags", "Cleaning spray", "Sponges", "Laundry detergent"]
+ZONES = ["Ас үй", "Жуынатын бөлме", "Ортақ бөлме", "Дәліз"]
+SUPPLIES = ["Дәретхана қағазы", "Қағаз сүлгі", "Ыдыс жуғыш сұйықтық", "Қоқыс пакеттері", "Тазалау спрейі", "Губкалар", "Кір жуғыш ұнтақ"]
+DUTY_STATUS = {"assigned": "тағайындалды", "done": "орындалды", "missed": "орындалмады"}
 REMIND_AT = "08:00"
 MISSED_AT = "23:30"
 BUYER_ROTATE_AT = "18:00"      # Sunday
@@ -51,7 +52,7 @@ def generate_cleaning(conn, ws: date, now: datetime, force: bool = False) -> lis
                 "INSERT INTO duty(kind, week_start, zone, user_id, due_date, created_at) VALUES ('cleaning', ?, ?, ?, ?, ?)",
                 (ws.isoformat(), zone, s["tg_id"], due.isoformat(), to_db(now)),
             )
-            notices.append(Notice(s["tg_id"], f"🧹 Heads-up: you're on {zone} duty on {fmt_date(due)}. I'll remind you that morning."))
+            notices.append(Notice(s["tg_id"], f"🧹 Ескерту: {fmt_date(due)} күні сіз «{zone}» аймағында кезекшісіз. Сол күні таңертең еске саламын."))
         set_setting(conn, "cleaning_pointer", str(picked[-1]["rotation_order"]))
         set_setting(conn, "cleaning_weeks", str(offset + 1))
     return notices
@@ -82,12 +83,12 @@ def shopping_list(conn):
 def buyer_message(conn, d) -> tuple[str, object]:
     items = shopping_list(conn)
     ws = date.fromisoformat(d["week_start"])
-    head = f"🛒 You're the buyer for the week of {fmt_date(ws)}."
+    head = f"🛒 {fmt_date(ws)} басталатын аптада сатып алушы — сізсіз."
     if not items:
-        return head + "\nThe shopping list is empty right now — I'll DM you when something runs low.", None
-    text = head + "\nItems:\n" + "\n".join(f"• {i['item']}" for i in items) + "\nTap an item once you've bought it:"
+        return head + "\nҚазір сатып алу тізімі бос — бірдеңе таусылса, хабарлаймын.", None
+    text = head + "\nТізім:\n" + "\n".join(f"• {i['item']}" for i in items) + "\nСатып алғаннан кейін затты басыңыз:"
     rows = [[(f"✅ {i['item']}", f"d:buy:{i['id']}")] for i in items]
-    rows.append([("📎 Upload receipt", f"d:rcpt:{d['id']}")])
+    rows.append([("📎 Чекті жүктеу", f"d:rcpt:{d['id']}")])
     return text, kb(*rows)
 
 
@@ -100,10 +101,10 @@ def current_buyer(conn, now: datetime):
 
 def flag_low(conn, uid: int, item: str, now: datetime) -> tuple[str, list[Notice]]:
     if item not in SUPPLIES:
-        return "Unknown item.", []
+        return "Белгісіз зат.", []
     with tx(conn):
         if conn.execute("SELECT 1 FROM supplies WHERE item = ? AND status = 'needed'", (item,)).fetchone():
-            return f"{item} is already on the shopping list 👍", []
+            return f"«{item}» сатып алу тізімінде бар 👍", []
         conn.execute(
             "INSERT INTO supplies(item, status, flagged_by, flagged_at) VALUES (?, 'needed', ?, ?)",
             (item, uid, to_db(now)),
@@ -112,20 +113,20 @@ def flag_low(conn, uid: int, item: str, now: datetime) -> tuple[str, list[Notice
         buyer = current_buyer(conn, now)
         if buyer and buyer["user_id"] != uid:
             text, markup = buyer_message(conn, buyer)
-            notices.append(Notice(buyer["user_id"], f"🛒 {item} was just added to the list.\n\n" + text, markup))
-    return f"🛒 Added {item} to the shared shopping list. Thanks!", notices
+            notices.append(Notice(buyer["user_id"], f"🛒 Тізімге «{item}» қосылды.\n\n" + text, markup))
+    return f"🛒 «{item}» ортақ сатып алу тізіміне қосылды. Рақмет!", notices
 
 
 def mark_bought(conn, uid: int, supply_id: int, now: datetime) -> str:
     with tx(conn):
         s = conn.execute("SELECT * FROM supplies WHERE id = ?", (supply_id,)).fetchone()
         if not s or s["status"] != "needed":
-            return "Already marked as bought 👍"
+            return "Сатып алынды деп белгіленген 👍"
         conn.execute(
             "UPDATE supplies SET status = 'bought', bought_by = ?, bought_at = ? WHERE id = ?",
             (uid, to_db(now), supply_id),
         )
-    return f"✅ {s['item']} marked as bought. Thank you!"
+    return f"✅ «{s['item']}» сатып алынды деп белгіленді. Рақмет!"
 
 
 def save_receipt(conn, duty_id: int, uid: int, photo_id: str, now: datetime) -> bool:
@@ -150,9 +151,9 @@ def mark_cleaning_done(conn, duty_id: int, uid: int, now: datetime) -> tuple[str
     with tx(conn):
         d = conn.execute("SELECT * FROM duty WHERE id = ?", (duty_id,)).fetchone()
         if not d or d["user_id"] != uid or d["kind"] != "cleaning":
-            return "That duty isn't yours.", []
+            return "Бұл сіздің кезекшілігіңіз емес.", []
         if d["status"] == "done":
-            return "Already marked done 👍", []
+            return "Орындалды деп белгіленген 👍", []
         conn.execute("UPDATE duty SET status = 'done', done_at = ? WHERE id = ?", (to_db(now), duty_id))
         notices = []
         nxt = conn.execute(
@@ -160,15 +161,15 @@ def mark_cleaning_done(conn, duty_id: int, uid: int, now: datetime) -> tuple[str
             (d["zone"], d["week_start"]),
         ).fetchone()
         if nxt:
-            notices.append(Notice(nxt["user_id"], f"🧹 {users.name_of(conn, uid)} finished {d['zone']}. "
-                                  f"You're next for {d['zone']} on {fmt_date(date.fromisoformat(nxt['due_date']))}."))
+            notices.append(Notice(nxt["user_id"], f"🧹 {users.name_of(conn, uid)} «{d['zone']}» аймағын тазалап бітірді. "
+                                  f"Келесі кезек сіздікі: «{d['zone']}», {fmt_date(date.fromisoformat(nxt['due_date']))}."))
         else:
             upcoming = _take_next(_eligible(conn, week_start(local_today(now)) + timedelta(days=7)),
                                   int(get_setting(conn, "cleaning_pointer", "0")), 1)
             if upcoming and upcoming[0]["tg_id"] != uid:
                 notices.append(Notice(upcoming[0]["tg_id"],
-                                      f"🧹 {users.name_of(conn, uid)} finished {d['zone']}. You're up next in the cleaning rotation."))
-    return f"✅ Thanks! {d['zone']} marked as done.", notices
+                                      f"🧹 {users.name_of(conn, uid)} «{d['zone']}» аймағын тазалап бітірді. Тазалау кезегінде келесі — сіз."))
+    return f"✅ Рақмет! «{d['zone']}» орындалды деп белгіленді.", notices
 
 
 def reassign(conn, actor: int, duty_id: int, new_uid: int) -> list[Notice]:
@@ -180,12 +181,12 @@ def reassign(conn, actor: int, duty_id: int, new_uid: int) -> list[Notice]:
             "UPDATE duty SET user_id = ?, changed_by = ?, reminded = 0, status = 'assigned' WHERE id = ?",
             (new_uid, actor, duty_id),
         )
-        what = d["zone"] + " cleaning" if d["kind"] == "cleaning" else "supplies buyer"
+        what = f"«{d['zone']}» тазалау" if d["kind"] == "cleaning" else "шаруашылық заттарын сатып алу"
         audit.log(conn, actor, "duty_reassign",
                   f"{what} week {d['week_start']}: {users.name_of(conn, d['user_id'])} -> {users.name_of(conn, new_uid)}")
         return [
-            Notice(new_uid, f"📋 A mentor assigned you: {what} (week of {fmt_date(date.fromisoformat(d['week_start']))})."),
-            Notice(d["user_id"], f"📋 A mentor moved your {what} duty to someone else."),
+            Notice(new_uid, f"📋 Тәлімгер сізге тапсырды: {what} ({fmt_date(date.fromisoformat(d['week_start']))} басталатын апта)."),
+            Notice(d["user_id"], f"📋 Тәлімгер сіздің кезекшілігіңізді ({what}) басқа адамға берді."),
         ]
 
 
@@ -205,9 +206,9 @@ def fairness_text(conn) -> str:
         "FROM users u LEFT JOIN duty d ON d.user_id = u.tg_id WHERE u.role = 'student' "
         "GROUP BY u.tg_id ORDER BY u.rotation_order"
     ).fetchall()
-    lines = ["📊 Duty totals (all time): cleaning done/assigned · missed · buyer weeks"]
+    lines = ["📊 Кезекшілік қорытындысы (барлық уақыт): тазалау орындалды/тағайындалды · өткізіп алды · сатып алушы апталары"]
     for r in rows:
-        tag = "" if r["active"] else " (inactive)"
+        tag = "" if r["active"] else " (белсенді емес)"
         lines.append(f"• {r['name']}{tag}: {r['cl_done'] or 0}/{r['cl'] or 0} · {r['cl_missed'] or 0} · {r['buy'] or 0}")
     return "\n".join(lines)
 
@@ -233,8 +234,8 @@ def tick(conn, now: datetime) -> list[Notice]:
             (today.isoformat(),),
         ).fetchall():
             conn.execute("UPDATE duty SET reminded = 1 WHERE id = ?", (d["id"],))
-            notices.append(Notice(d["user_id"], f"🧹 You're on {d['zone'].lower()} duty today.",
-                                  kb([("✅ Mark done", f"d:done:{d['id']}")])))
+            notices.append(Notice(d["user_id"], f"🧹 Бүгін сіз «{d['zone']}» аймағында кезекшісіз.",
+                                  kb([("✅ Орындалды", f"d:done:{d['id']}")])))
 
     missed_q = "SELECT * FROM duty WHERE kind = 'cleaning' AND status = 'assigned' AND (due_date < ?"
     args = [today.isoformat()]
@@ -245,7 +246,7 @@ def tick(conn, now: datetime) -> list[Notice]:
         conn.execute("UPDATE duty SET status = 'missed' WHERE id = ?", (d["id"],))
         name = users.name_of(conn, d["user_id"])
         notices += users.notify_mentors(
-            conn, f"🧹 {name} didn't mark {d['zone']} duty as done ({fmt_date(date.fromisoformat(d['due_date']))}).",
+            conn, f"🧹 {name} «{d['zone']}» кезекшілігін орындалды деп белгілемеді ({fmt_date(date.fromisoformat(d['due_date']))}).",
             silent=True,
         )
     return notices

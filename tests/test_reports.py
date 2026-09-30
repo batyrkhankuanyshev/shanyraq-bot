@@ -79,13 +79,13 @@ def test_no_token_means_no_replies(conn):
 
 
 def test_maintenance_duplicate_and_fixed_dm(conn):
-    rid, n = reports.create_maintenance(conn, REPORTER, "Kitchen", "Stove broken", None, NOW, anonymous=False)
+    rid, n = reports.create_maintenance(conn, REPORTER, "Ас үй", "Stove broken", None, NOW, anonymous=False)
     assert {x.chat_id for x in n} == set(MENTORS)
-    assert reports.recent_duplicate(conn, "Kitchen", NOW + timedelta(hours=1))["id"] == rid
-    assert reports.recent_duplicate(conn, "Kitchen", NOW + timedelta(hours=3)) is None
+    assert reports.recent_duplicate(conn, "Ас үй", NOW + timedelta(hours=1))["id"] == rid
+    assert reports.recent_duplicate(conn, "Ас үй", NOW + timedelta(hours=3)) is None
     assert reports.set_status(conn, MENTORS[0], rid, "in_progress", NOW)[0].chat_id == REPORTER
     n = reports.set_status(conn, MENTORS[0], rid, "fixed", NOW)
-    assert n[0].chat_id == REPORTER and "fixed" in n[0].text
+    assert n[0].chat_id == REPORTER and "жөнделді" in n[0].text
 
 
 def test_anonymous_maintenance_reporter_not_stored(conn):
