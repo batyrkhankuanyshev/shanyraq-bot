@@ -1,0 +1,17 @@
+# Copy to /etc/systemd/system/shanyraq-bot.service (adjust User and paths), then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now shanyraq-bot
+[Unit]
+Description=Shanyraq hostel Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/shanyraq-bot
+ExecStart=/home/pi/shanyraq-bot/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
