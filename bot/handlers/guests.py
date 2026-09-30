@@ -71,7 +71,7 @@ async def got_time(cb: CallbackQuery, state: FSMContext):
     d = await state.get_data()
     arrive = utcnow() if raw == "now" else at_local(parse_dkey(d["day"]), f"{raw[:2]}:{raw[2:]}")
     await state.update_data(arrive=to_db(arrive))
-    await show(cb, "⏱ Қанша уақыт болады? (түнеу үшін тәлімгердің рұқсаты керек)",
+    await show(cb, "⏱ Қанша уақыт болады? (кез келген қонаққа тәлімгердің рұқсаты керек)",
                kb(*grid([(label, f"g:dur:{code}") for code, (label, _, _) in DURATIONS.items()], 3)))
 
 
@@ -152,9 +152,9 @@ async def pending(cb: CallbackQuery, user, conn):
         return await not_allowed(cb)
     rows = guests.pending(conn)
     if not rows:
-        await show(cb, "Түнеуге күтудегі өтініш жоқ.", kb([("⬅️ Басқару", "a:menu")]))
+        await show(cb, "Күтудегі қонақ өтініші жоқ.", kb([("⬅️ Басқару", "a:menu")]))
         return
-    await show(cb, "⏳ Түнеуге күтудегі өтініштер:", kb([("⬅️ Басқару", "a:menu")]))
+    await show(cb, "⏳ Күтудегі қонақ өтініштері:", kb([("⬅️ Басқару", "a:menu")]))
     for g in rows:
         await cb.message.answer(f"{g['host_name']}: {guests.describe(g)}",
                                 reply_markup=kb([("✅ Мақұлдау", f"g:ap:{g['id']}"), ("❌ Қабылдамау", f"g:rj:{g['id']}")]))

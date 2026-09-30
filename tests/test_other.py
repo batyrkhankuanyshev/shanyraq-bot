@@ -14,15 +14,20 @@ S1 = STUDENTS[0]
 
 def test_guest_limits_and_approval(conn):
     msg, n = guests.register(conn, S1, "Ann", NOW, "4h", NOW)
-    assert "автоматты түрде мақұлданды" in msg and all(x.silent for x in n)
+    assert "Рұқсат сұралды" in msg and {x.chat_id for x in n} == set(MENTORS)   # day visits need approval too
+    assert conn.execute("SELECT status FROM guests WHERE name = 'Ann'").fetchone()[0] == "pending"
+    ann = conn.execute("SELECT id FROM guests WHERE name = 'Ann'").fetchone()["id"]
+    assert "рұқсат берілді" in guests.decide(conn, MENTORS[0], ann, True)[0].text
     msg, n = guests.register(conn, S1, "Bob", NOW, "1n", NOW)
-    assert "рұқсат сұралды" in msg and {x.chat_id for x in n} == set(MENTORS)
+    assert "Рұқсат сұралды" in msg and {x.chat_id for x in n} == set(MENTORS)
     with pytest.raises(ValueError):
         guests.register(conn, S1, "Cid", NOW, "2h", NOW)
     bob = conn.execute("SELECT id FROM guests WHERE name = 'Bob'").fetchone()["id"]
     n = guests.decide(conn, MENTORS[0], bob, False, "exam week")
     assert n[0].chat_id == S1 and "exam week" in n[0].text
     guests.register(conn, S1, "Cid", NOW, "2h", NOW)  # rejected guest freed a place
+    cid = conn.execute("SELECT id FROM guests WHERE name = 'Cid'").fetchone()["id"]
+    guests.decide(conn, MENTORS[1], cid, True)
     assert len(guests.today_list(conn, NOW)) == 2
     n = guests.tick(conn, NOW + timedelta(hours=5))
     assert {x.text.split()[1] for x in n} == {"Ann", "Cid"}

@@ -270,6 +270,10 @@ async def test_guest_flow(h):
     await h.tap(s, "g:t:now")
     await h.tap(s, "g:dur:2h")
     gid = h.conn.execute("SELECT MAX(id) FROM guests").fetchone()[0]
+    assert "Рұқсат сұралды" in h.last(s)
+    assert any("қонақ шақыруға рұқсат сұрайды" in t for t in h.session.texts(MENTORS[1]))
+    await h.tap(MENTORS[1], f"g:ap:{gid}")
+    assert any("рұқсат берілді" in t for t in h.session.texts(s))
     await h.tap(s, f"g:out:{gid}")
 
 

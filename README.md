@@ -173,8 +173,8 @@ Rules you can change at the top of `bot/services/washer.py`:
 
 ### Guests
 - Registration asks for name → arrival day and time → duration. Each student can have at most 2 active guests.
-- Day visits are approved automatically and mentors get a quiet heads-up.
-- Overnight stays need mentor approval. If rejected, the host sees the reason.
+- **Every guest needs mentor approval**, both day visits and overnight stays. Mentors get [Approve] [Reject] buttons, and the host is told the decision (with the reason if rejected).
+- If no mentor decides before the visit ends, the request expires and the host is told.
 - Guests are checked out automatically at departure time, or the host can tap Check out.
 - Mentors see Guests Today.
 
@@ -192,7 +192,7 @@ Rules you can change at the top of `bot/services/washer.py`:
 | Rotation | Reassign any duty, pause/unpause students, generate the current week, view history |
 | Reports | Open maintenance reports with status buttons; anonymous reports with reply/close |
 | Announcements | Post, edit, pin, cancel scheduled |
-| Guests | Approve or reject overnight stays, today's list |
+| Guests | Approve or reject guest requests, today's list |
 | Users | Add (by ID), change role, mute, washer ban/unban, rotation pause, deactivate (cancels future bookings, frees recurring slot, removes from rotation) |
 | Stats | Washer usage, peak slots, top users, no-show rates, late cancels, duty completion |
 | Audit log | Every mentor action: who, what, when |

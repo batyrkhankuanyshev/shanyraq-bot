@@ -1,4 +1,4 @@
-"""Guest log: day visits auto-approved, overnight stays need a mentor."""
+"""Guest log: every guest (day visit or overnight) needs a mentor's approval."""
 from datetime import datetime, timedelta
 
 from ..db import tx
@@ -38,22 +38,19 @@ def register(conn, host: int, name: str, arrive: datetime, duration: str, now: d
     with tx(conn):
         if len(active_for(conn, host, now)) >= MAX_ACTIVE:
             raise ValueError(f"Сізде {MAX_ACTIVE} белсенді қонақ бар — алдымен біреуін шығарып жіберіңіз.")
-        status = "pending" if overnight else "approved"
+        status = "pending"  # every guest waits for a mentor's decision
         cur = conn.execute(
             "INSERT INTO guests(host_id, name, arrive_at, depart_at, overnight, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (host, name, to_db(arrive), to_db(depart), int(overnight), status, to_db(now)),
         )
         g = get(conn, cur.lastrowid)
         host_name = users.name_of(conn, host)
-        if overnight:
-            notices = users.notify_mentors(
-                conn, f"🚪 {host_name} қонағын түнетуге рұқсат сұрайды:\n{describe(g)}",
-                kb([("✅ Мақұлдау", f"g:ap:{g['id']}"), ("❌ Қабылдамау", f"g:rj:{g['id']}")]), silent=False,
-            )
-            msg = "📨 Түнеуге рұқсат сұралды — тәлімгер жақын арада шешім қабылдайды. Хабарлаймын."
-        else:
-            notices = users.notify_mentors(conn, f"🚪 Ақпарат: {host_name} қонақ күтуде (күндіз).\n{describe(g)}", silent=True)
-            msg = "✅ Қонақ тіркелді (күндізгі келу, автоматты түрде мақұлданды)."
+        what = "қонағын түнетуге" if overnight else "қонақ шақыруға"
+        notices = users.notify_mentors(
+            conn, f"🚪 {host_name} {what} рұқсат сұрайды:\n{describe(g)}",
+            kb([("✅ Мақұлдау", f"g:ap:{g['id']}"), ("❌ Қабылдамау", f"g:rj:{g['id']}")]), silent=False,
+        )
+        msg = "📨 Рұқсат сұралды — тәлімгер жақын арада шешім қабылдайды. Нәтижесін хабарлаймын."
     return msg, notices
 
 
@@ -68,8 +65,8 @@ def decide(conn, actor: int, gid: int, approve: bool, reason: str | None = None)
         )
         audit.log(conn, actor, "guest_" + ("approve" if approve else "reject"), f"#{gid} {g['name']} ({reason or ''})")
     if approve:
-        return [Notice(g["host_id"], f"✅ {g['name']} қонағыңыздың түнеуі мақұлданды.")]
-    return [Notice(g["host_id"], f"❌ {g['name']} қонағыңыздың түнеуі мақұлданбады. Себебі: {reason or '—'}", silent=False)]
+        return [Notice(g["host_id"], f"✅ {g['name']} қонағыңызға рұқсат берілді.")]
+    return [Notice(g["host_id"], f"❌ {g['name']} қонағыңызға рұқсат берілмеді. Себебі: {reason or '—'}", silent=False)]
 
 
 def check_out(conn, host: int, gid: int, now: datetime) -> bool:
@@ -102,6 +99,8 @@ def tick(conn, now: datetime) -> list[Notice]:
         "SELECT * FROM guests WHERE status IN ('pending', 'approved') AND depart_at <= ?", (to_db(now),)
     ).fetchall():
         conn.execute("UPDATE guests SET status = 'expired' WHERE id = ?", (g["id"],))
-        if g["status"] == "approved":
+        if g["status"] == "pending":
+            notices.append(Notice(g["host_id"], f"🚪 {g['name']} қонағыңыз бойынша тәлімгер шешім қабылдамады, өтініштің мерзімі өтті."))
+        else:
             notices.append(Notice(g["host_id"], f"🚪 {g['name']} қонағыңыздың уақыты аяқталды (автоматты түрде шығарылды)."))
     return notices
